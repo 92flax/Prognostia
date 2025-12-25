@@ -15,7 +15,7 @@ export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: colors.tint,
+        tabBarActiveTintColor: colors.primary,
         headerShown: false,
         tabBarButton: HapticTab,
         tabBarStyle: {
@@ -31,8 +31,36 @@ export default function TabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: "Home",
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="house.fill" color={color} />,
+          title: "Dashboard",
+          tabBarIcon: ({ color }) => <IconSymbol size={26} name="house.fill" color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="ai"
+        options={{
+          title: "AI",
+          tabBarIcon: ({ color }) => <IconSymbol size={26} name="brain.head.profile" color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="risk"
+        options={{
+          title: "Risk",
+          tabBarIcon: ({ color }) => <IconSymbol size={26} name="shield.checkered" color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="portfolio"
+        options={{
+          title: "Portfolio",
+          tabBarIcon: ({ color }) => <IconSymbol size={26} name="briefcase.fill" color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="settings"
+        options={{
+          title: "Settings",
+          tabBarIcon: ({ color }) => <IconSymbol size={26} name="gearshape.fill" color={color} />,
         }}
       />
     </Tabs>

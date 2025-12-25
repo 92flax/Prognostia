@@ -9,21 +9,49 @@ type IconMapping = Record<SymbolViewProps["name"], ComponentProps<typeof Materia
 type IconSymbolName = keyof typeof MAPPING;
 
 /**
- * Add your SF Symbols to Material Icons mappings here.
- * - see Material Icons in the [Icons Directory](https://icons.expo.fyi).
- * - see SF Symbols in the [SF Symbols](https://developer.apple.com/sf-symbols/) app.
+ * SF Symbols to Material Icons mappings for AQTE trading app.
  */
 const MAPPING = {
+  // Tab bar icons
   "house.fill": "home",
-  "paperplane.fill": "send",
-  "chevron.left.forwardslash.chevron.right": "code",
+  "chart.line.uptrend.xyaxis": "show-chart",
+  "brain.head.profile": "psychology",
+  "shield.checkered": "security",
+  "briefcase.fill": "work",
+  "gearshape.fill": "settings",
+  // Navigation icons
   "chevron.right": "chevron-right",
+  "chevron.left": "chevron-left",
+  "chevron.up": "keyboard-arrow-up",
+  "chevron.down": "keyboard-arrow-down",
+  // Action icons
+  "plus.circle.fill": "add-circle",
+  "minus.circle.fill": "remove-circle",
+  "arrow.up.circle.fill": "arrow-upward",
+  "arrow.down.circle.fill": "arrow-downward",
+  "arrow.triangle.2.circlepath": "sync",
+  // Status icons
+  "checkmark.circle.fill": "check-circle",
+  "xmark.circle.fill": "cancel",
+  "exclamationmark.triangle.fill": "warning",
+  "info.circle.fill": "info",
+  // Trading icons
+  "chart.bar.fill": "bar-chart",
+  "chart.pie.fill": "pie-chart",
+  "dollarsign.circle.fill": "attach-money",
+  "bitcoinsign.circle.fill": "currency-bitcoin",
+  "percent": "percent",
+  // Misc icons
+  "bell.fill": "notifications",
+  "person.fill": "person",
+  "link": "link",
+  "doc.text.fill": "description",
+  "clock.fill": "schedule",
+  "star.fill": "star",
 } as IconMapping;
 
 /**
  * An icon component that uses native SF Symbols on iOS, and Material Icons on Android and web.
- * This ensures a consistent look across platforms, and optimal resource usage.
- * Icon `name`s are based on SF Symbols and require manual mapping to Material Icons.
  */
 export function IconSymbol({
   name,
