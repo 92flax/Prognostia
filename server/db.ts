@@ -4,17 +4,23 @@ import {
   InsertUser, 
   users, 
   userSettings,
+  userStats,
   signals, 
   trades,
+  balanceHistory,
   paperWallet,
   signalInteractions,
   InsertUserSettings,
+  InsertUserStats,
   InsertSignal,
   InsertTrade,
+  InsertBalanceHistory,
   InsertPaperWallet,
   InsertSignalInteraction,
   Signal,
   Trade,
+  UserStats,
+  BalanceHistory,
   PaperWallet,
   UserSettings,
   SignalInteraction,
@@ -163,7 +169,7 @@ export async function updateBitgetCredentials(
 
   await upsertUserSettings(userId, {
     ...credentials,
-    isConnected: false, // Reset connection status when credentials change
+    isConnected: false,
     connectionError: null,
   });
 }
@@ -188,6 +194,47 @@ export async function setAutoTradeEnabled(userId: number, enabled: boolean): Pro
   if (!db) return;
 
   await upsertUserSettings(userId, { autoTradeEnabled: enabled });
+}
+
+// ============================================
+// USER STATS OPERATIONS
+// ============================================
+
+export async function getUserStats(userId: number): Promise<UserStats | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const result = await db.select().from(userStats)
+    .where(eq(userStats.userId, userId))
+    .limit(1);
+
+  return result[0];
+}
+
+export async function getOrCreateUserStats(userId: number): Promise<UserStats | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const existing = await getUserStats(userId);
+  if (existing) return existing;
+
+  const result = await db.insert(userStats)
+    .values({ userId })
+    .returning();
+
+  return result[0];
+}
+
+export async function updateUserStats(
+  userId: number,
+  data: Partial<InsertUserStats>
+): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+
+  await db.update(userStats)
+    .set({ ...data, updatedAt: new Date() })
+    .where(eq(userStats.userId, userId));
 }
 
 // ============================================
@@ -283,8 +330,6 @@ export async function getOpenTrades(userId?: number, mode?: "PAPER" | "LIVE"): P
   const db = await getDb();
   if (!db) return [];
 
-  let query = db.select().from(trades).where(eq(trades.status, "OPEN"));
-  
   if (userId !== undefined && mode !== undefined) {
     return db.select().from(trades)
       .where(and(
@@ -292,26 +337,26 @@ export async function getOpenTrades(userId?: number, mode?: "PAPER" | "LIVE"): P
         eq(trades.userId, userId),
         eq(trades.mode, mode)
       ))
-      .orderBy(desc(trades.openedAt));
+      .orderBy(desc(trades.timestampOpen));
   } else if (userId !== undefined) {
     return db.select().from(trades)
       .where(and(
         eq(trades.status, "OPEN"),
         eq(trades.userId, userId)
       ))
-      .orderBy(desc(trades.openedAt));
+      .orderBy(desc(trades.timestampOpen));
   } else if (mode !== undefined) {
     return db.select().from(trades)
       .where(and(
         eq(trades.status, "OPEN"),
         eq(trades.mode, mode)
       ))
-      .orderBy(desc(trades.openedAt));
+      .orderBy(desc(trades.timestampOpen));
   }
 
   return db.select().from(trades)
     .where(eq(trades.status, "OPEN"))
-    .orderBy(desc(trades.openedAt));
+    .orderBy(desc(trades.timestampOpen));
 }
 
 export async function getTradeHistory(
@@ -328,17 +373,17 @@ export async function getTradeHistory(
         eq(trades.userId, userId),
         eq(trades.mode, mode)
       ))
-      .orderBy(desc(trades.openedAt))
+      .orderBy(desc(trades.timestampOpen))
       .limit(limit);
   } else if (userId !== undefined) {
     return db.select().from(trades)
       .where(eq(trades.userId, userId))
-      .orderBy(desc(trades.openedAt))
+      .orderBy(desc(trades.timestampOpen))
       .limit(limit);
   }
 
   return db.select().from(trades)
-    .orderBy(desc(trades.openedAt))
+    .orderBy(desc(trades.timestampOpen))
     .limit(limit);
 }
 
@@ -346,18 +391,25 @@ export async function closeTrade(
   tradeId: number,
   data: {
     exitPrice: string;
-    realizedPnl: string;
-    pnlPercent: string;
+    pnlAbsolute: string;
+    pnlPercent: number;
     closeReason: string;
+    durationSeconds?: number;
+    fees?: string;
   }
 ): Promise<Trade | undefined> {
   const db = await getDb();
   if (!db) return undefined;
 
   await db.update(trades).set({
-    ...data,
+    exitPrice: data.exitPrice,
+    pnlAbsolute: data.pnlAbsolute,
+    pnlPercent: data.pnlPercent,
+    closeReason: data.closeReason,
+    durationSeconds: data.durationSeconds,
+    fees: data.fees,
     status: "CLOSED",
-    closedAt: new Date(),
+    timestampClose: new Date(),
     updatedAt: new Date(),
   }).where(eq(trades.id, tradeId));
 
@@ -368,7 +420,7 @@ export async function closeTrade(
 export async function updateTradeUnrealizedPnl(
   tradeId: number,
   unrealizedPnl: string,
-  pnlPercent: string
+  pnlPercent: number
 ): Promise<void> {
   const db = await getDb();
   if (!db) return;
@@ -378,6 +430,35 @@ export async function updateTradeUnrealizedPnl(
     pnlPercent,
     updatedAt: new Date(),
   }).where(eq(trades.id, tradeId));
+}
+
+// ============================================
+// BALANCE HISTORY OPERATIONS
+// ============================================
+
+export async function addBalanceHistoryEntry(entry: InsertBalanceHistory): Promise<BalanceHistory | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const result = await db.insert(balanceHistory).values(entry).returning();
+  return result[0];
+}
+
+export async function getBalanceHistory(
+  userId: number,
+  mode: "PAPER" | "LIVE",
+  limit = 100
+): Promise<BalanceHistory[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  return db.select().from(balanceHistory)
+    .where(and(
+      eq(balanceHistory.userId, userId),
+      eq(balanceHistory.mode, mode)
+    ))
+    .orderBy(desc(balanceHistory.timestamp))
+    .limit(limit);
 }
 
 // ============================================
@@ -424,25 +505,23 @@ export async function updatePaperWalletBalance(
   const db = await getDb();
   if (!db) return;
 
-  await db.update(paperWallet).set({
-    ...data,
-    updatedAt: new Date(),
-  }).where(eq(paperWallet.userId, userId));
+  await db.update(paperWallet)
+    .set({ ...data, updatedAt: new Date() })
+    .where(eq(paperWallet.userId, userId));
 }
 
-export async function resetPaperWallet(userId: number, initialBalance = "10000.0"): Promise<void> {
+export async function resetPaperWallet(userId: number): Promise<void> {
   const db = await getDb();
   if (!db) return;
 
   await db.update(paperWallet).set({
-    usdtBalance: initialBalance,
-    initialBalance,
+    usdtBalance: "10000.0",
+    availableBalance: "10000.0",
+    usedMargin: "0.0",
     totalPnl: "0.0",
     totalTrades: 0,
     winningTrades: 0,
     losingTrades: 0,
-    usedMargin: "0.0",
-    availableBalance: initialBalance,
     lastResetAt: new Date(),
     updatedAt: new Date(),
   }).where(eq(paperWallet.userId, userId));
@@ -452,42 +531,25 @@ export async function resetPaperWallet(userId: number, initialBalance = "10000.0
 // SIGNAL INTERACTION OPERATIONS
 // ============================================
 
-export async function recordSignalInteraction(
+export async function createSignalInteraction(
   interaction: InsertSignalInteraction
 ): Promise<SignalInteraction | undefined> {
   const db = await getDb();
-  if (!db) {
-    console.warn("[Database] Cannot record interaction: database not available");
-    return undefined;
-  }
+  if (!db) return undefined;
 
   const result = await db.insert(signalInteractions).values(interaction).returning();
   return result[0];
 }
 
-export async function markSignalCopied(signalId: number, userId?: number): Promise<void> {
+export async function getUserSignalInteractions(
+  userId: number,
+  limit = 20
+): Promise<SignalInteraction[]> {
   const db = await getDb();
-  if (!db) return;
+  if (!db) return [];
 
-  await db.insert(signalInteractions).values({
-    signalId,
-    userId: userId ?? null,
-    wasCopied: true,
-  });
-}
-
-export async function getSignalStats(signalId: number): Promise<{
-  copyCount: number;
-  executeCount: number;
-}> {
-  const db = await getDb();
-  if (!db) return { copyCount: 0, executeCount: 0 };
-
-  const interactions = await db.select().from(signalInteractions)
-    .where(eq(signalInteractions.signalId, signalId));
-
-  return {
-    copyCount: interactions.filter(i => i.wasCopied).length,
-    executeCount: interactions.filter(i => i.wasExecuted).length,
-  };
+  return db.select().from(signalInteractions)
+    .where(eq(signalInteractions.userId, userId))
+    .orderBy(desc(signalInteractions.createdAt))
+    .limit(limit);
 }

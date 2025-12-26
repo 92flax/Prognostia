@@ -8,6 +8,7 @@ import {
   decimal,
   integer,
   boolean,
+  real,
 } from "drizzle-orm/pg-core";
 
 /**
@@ -70,6 +71,61 @@ export const userSettings = pgTable("user_settings", {
 });
 
 /**
+ * User Stats - aggregated trading performance metrics
+ * Updated after each trade closes for analytics dashboard
+ */
+export const userStats = pgTable("user_stats", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id).unique(),
+  
+  // Trade counts
+  totalTrades: integer("total_trades").default(0).notNull(),
+  winningTrades: integer("winning_trades").default(0).notNull(),
+  losingTrades: integer("losing_trades").default(0).notNull(),
+  
+  // Win rate (calculated: winningTrades / totalTrades * 100)
+  winRate: real("win_rate").default(0).notNull(), // 0-100%
+  
+  // Risk/Reward metrics
+  avgRiskRewardRatio: real("avg_risk_reward_ratio").default(0).notNull(),
+  avgWinAmount: decimal("avg_win_amount", { precision: 20, scale: 8 }).default("0").notNull(),
+  avgLossAmount: decimal("avg_loss_amount", { precision: 20, scale: 8 }).default("0").notNull(),
+  
+  // Profit metrics
+  profitFactor: real("profit_factor").default(0).notNull(), // grossProfit / grossLoss
+  totalProfit: decimal("total_profit", { precision: 20, scale: 8 }).default("0").notNull(),
+  totalLoss: decimal("total_loss", { precision: 20, scale: 8 }).default("0").notNull(),
+  netPnl: decimal("net_pnl", { precision: 20, scale: 8 }).default("0").notNull(),
+  
+  // Drawdown tracking
+  maxDrawdown: real("max_drawdown").default(0).notNull(), // % from peak
+  currentDrawdown: real("current_drawdown").default(0).notNull(),
+  peakBalance: decimal("peak_balance", { precision: 20, scale: 8 }).default("10000").notNull(),
+  
+  // Current balance
+  currentBalance: decimal("current_balance", { precision: 20, scale: 8 }).default("10000").notNull(),
+  
+  // Best/Worst trades
+  bestTradeId: integer("best_trade_id"),
+  bestTradePnl: decimal("best_trade_pnl", { precision: 20, scale: 8 }),
+  worstTradeId: integer("worst_trade_id"),
+  worstTradePnl: decimal("worst_trade_pnl", { precision: 20, scale: 8 }),
+  
+  // Streak tracking
+  currentStreak: integer("current_streak").default(0).notNull(), // positive = wins, negative = losses
+  longestWinStreak: integer("longest_win_streak").default(0).notNull(),
+  longestLossStreak: integer("longest_loss_streak").default(0).notNull(),
+  
+  // Time-based metrics
+  avgTradeDurationSeconds: integer("avg_trade_duration_seconds").default(0).notNull(),
+  
+  // Timestamps
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  lastTradeAt: timestamp("last_trade_at"),
+});
+
+/**
  * Signals table - stores complete trading signal setups
  */
 export const signals = pgTable("signals", {
@@ -119,7 +175,7 @@ export const signals = pgTable("signals", {
 });
 
 /**
- * Trades table - stores all executed trades (both paper and live)
+ * Trades table - stores all executed trades with detailed metrics for analytics
  */
 export const trades = pgTable("trades", {
   id: serial("id").primaryKey(),
@@ -139,17 +195,26 @@ export const trades = pgTable("trades", {
   leverage: integer("leverage").notNull(),
   margin: decimal("margin", { precision: 20, scale: 8 }).notNull(), // Required margin
   
-  // Prices
+  // Prices (with 8 decimal precision for crypto)
   entryPrice: decimal("entry_price", { precision: 20, scale: 8 }).notNull(),
   exitPrice: decimal("exit_price", { precision: 20, scale: 8 }),
   takeProfitPrice: decimal("tp_price", { precision: 20, scale: 8 }),
   stopLossPrice: decimal("sl_price", { precision: 20, scale: 8 }),
   liquidationPrice: decimal("liquidation_price", { precision: 20, scale: 8 }),
   
-  // P&L
-  realizedPnl: decimal("realized_pnl", { precision: 20, scale: 8 }),
+  // P&L - Absolute and Percentage
+  pnlAbsolute: decimal("pnl_absolute", { precision: 20, scale: 8 }), // Realized P&L in USDT
+  pnlPercent: real("pnl_percent"), // P&L as percentage of margin
   unrealizedPnl: decimal("unrealized_pnl", { precision: 20, scale: 8 }),
-  pnlPercent: decimal("pnl_percent", { precision: 10, scale: 4 }),
+  
+  // Fees tracking
+  fees: decimal("fees", { precision: 20, scale: 8 }).default("0"), // Total fees paid
+  entryFee: decimal("entry_fee", { precision: 20, scale: 8 }).default("0"),
+  exitFee: decimal("exit_fee", { precision: 20, scale: 8 }).default("0"),
+  fundingFee: decimal("funding_fee", { precision: 20, scale: 8 }).default("0"),
+  
+  // Duration tracking
+  durationSeconds: integer("duration_seconds"), // Time from open to close
   
   // Status
   status: tradeStatusEnum("status").default("OPEN").notNull(),
@@ -159,10 +224,34 @@ export const trades = pgTable("trades", {
   exchangeOrderId: varchar("exchange_order_id", { length: 128 }),
   exchangePositionId: varchar("exchange_position_id", { length: 128 }),
   
-  // Timestamps
-  openedAt: timestamp("opened_at").defaultNow().notNull(),
-  closedAt: timestamp("closed_at"),
+  // Risk metrics at time of trade
+  riskRewardRatio: real("risk_reward_ratio"),
+  riskPercent: real("risk_percent"), // % of account risked
+  
+  // Timestamps with precision
+  timestampOpen: timestamp("timestamp_open").defaultNow().notNull(),
+  timestampClose: timestamp("timestamp_close"),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+/**
+ * Balance History - tracks balance changes over time for equity curve
+ */
+export const balanceHistory = pgTable("balance_history", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id),
+  
+  // Balance snapshot
+  balance: decimal("balance", { precision: 20, scale: 8 }).notNull(),
+  mode: tradeModeEnum("mode").notNull(), // PAPER or LIVE
+  
+  // Change details
+  changeAmount: decimal("change_amount", { precision: 20, scale: 8 }),
+  changeReason: varchar("change_reason", { length: 32 }), // "TRADE_CLOSE", "DEPOSIT", "WITHDRAWAL", "FEE"
+  tradeId: integer("trade_id").references(() => trades.id),
+  
+  // Timestamp
+  timestamp: timestamp("timestamp").defaultNow().notNull(),
 });
 
 /**
@@ -214,11 +303,17 @@ export type InsertUser = typeof users.$inferInsert;
 export type UserSettings = typeof userSettings.$inferSelect;
 export type InsertUserSettings = typeof userSettings.$inferInsert;
 
+export type UserStats = typeof userStats.$inferSelect;
+export type InsertUserStats = typeof userStats.$inferInsert;
+
 export type Signal = typeof signals.$inferSelect;
 export type InsertSignal = typeof signals.$inferInsert;
 
 export type Trade = typeof trades.$inferSelect;
 export type InsertTrade = typeof trades.$inferInsert;
+
+export type BalanceHistory = typeof balanceHistory.$inferSelect;
+export type InsertBalanceHistory = typeof balanceHistory.$inferInsert;
 
 export type PaperWallet = typeof paperWallet.$inferSelect;
 export type InsertPaperWallet = typeof paperWallet.$inferInsert;

@@ -10,7 +10,10 @@ import { TradingSignalCard } from "@/components/trading-signal-card";
 import { ModeIndicator } from "@/components/mode-indicator";
 import { WalletBalanceCard } from "@/components/wallet-balance-card";
 import { TradeExecutionModal } from "@/components/trade-execution-modal";
+import { BotActivationBanner } from "@/components/bot-activation-banner";
+import { LivePositionCard, LivePosition } from "@/components/live-position-card";
 import { useColors } from "@/hooks/use-colors";
+import { usePrices } from "@/lib/price-context";
 import { SignalSetup } from "@/lib/signal-engine";
 import {
   MOCK_ASSETS,
@@ -22,7 +25,10 @@ import {
  * Dashboard Screen - Main trading interface
  * 
  * Features:
+ * - Bot Activation Banner with countdown
+ * - Live Positions with pulsating badges
  * - Wallet balance display (available/locked)
+ * - Real-time price updates
  * - Asset selector (horizontal scroll)
  * - Mode indicator (PAPER/LIVE)
  * - Auto-trade toggle
@@ -31,6 +37,7 @@ import {
  */
 export default function DashboardScreen() {
   const colors = useColors();
+  const { getPrice, formatPrice, isConnected: priceConnected } = usePrices();
   
   // State
   const [selectedAsset, setSelectedAsset] = useState("BTCUSDT");
@@ -41,6 +48,13 @@ export default function DashboardScreen() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isExecuting, setIsExecuting] = useState(false);
   const [isLoadingBalance, setIsLoadingBalance] = useState(false);
+  
+  // Bot activation state
+  const [isBotActivated, setIsBotActivated] = useState(false);
+  const [botAction, setBotAction] = useState<"BUY" | "SELL">("BUY");
+  
+  // Open positions
+  const [openPositions, setOpenPositions] = useState<LivePosition[]>([]);
   
   // Wallet state
   const [totalBalance, setTotalBalance] = useState(MOCK_PAPER_WALLET.balance);
@@ -56,6 +70,15 @@ export default function DashboardScreen() {
     setCurrentSignal(signal);
   }, [selectedAsset]);
 
+  // Auto-trade trigger when signal confidence is high
+  useEffect(() => {
+    if (autoTradeEnabled && currentSignal && currentSignal.confidenceScore >= 75) {
+      // Trigger bot activation with countdown
+      setIsBotActivated(true);
+      setBotAction(currentSignal.direction === "LONG" ? "BUY" : "SELL");
+    }
+  }, [autoTradeEnabled, currentSignal]);
+
   // Handle asset selection
   const handleAssetSelect = (symbol: string) => {
     setSelectedAsset(symbol);
@@ -69,6 +92,43 @@ export default function DashboardScreen() {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
     setAutoTradeEnabled(enabled);
+  };
+
+  // Handle bot countdown complete - execute trade
+  const handleBotCountdownComplete = async () => {
+    if (!currentSignal) return;
+    
+    // Default position size for auto-trade (10% of available balance)
+    const positionSize = availableBalance * 0.1;
+    
+    // Create new position
+    const newPosition: LivePosition = {
+      id: Date.now(),
+      asset: currentSignal.asset,
+      direction: currentSignal.direction,
+      entryPrice: currentSignal.entryPrice,
+      leverage: currentSignal.leverageRecommendation,
+      margin: positionSize,
+      size: (positionSize * currentSignal.leverageRecommendation) / currentSignal.entryPrice,
+      takeProfitPrice: currentSignal.takeProfitPrice,
+      stopLossPrice: currentSignal.stopLossPrice,
+      mode: tradingMode,
+      timestampOpen: new Date(),
+    };
+    
+    setOpenPositions(prev => [newPosition, ...prev]);
+    setAvailableBalance(prev => prev - positionSize);
+    setLockedBalance(prev => prev + positionSize);
+    
+    if (Platform.OS !== "web") {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }
+    
+    setIsBotActivated(false);
+    
+    // Generate new signal
+    const newSignal = generateMockSignal(selectedAsset);
+    setCurrentSignal(newSignal);
   };
 
   // Handle refresh
@@ -102,6 +162,23 @@ export default function DashboardScreen() {
     // Simulate execution delay
     await new Promise(resolve => setTimeout(resolve, 1500));
     
+    // Create new position
+    const newPosition: LivePosition = {
+      id: Date.now(),
+      asset: currentSignal.asset,
+      direction: currentSignal.direction,
+      entryPrice: currentSignal.entryPrice,
+      leverage: currentSignal.leverageRecommendation,
+      margin: sizeUsdt,
+      size: (sizeUsdt * currentSignal.leverageRecommendation) / currentSignal.entryPrice,
+      takeProfitPrice: currentSignal.takeProfitPrice,
+      stopLossPrice: currentSignal.stopLossPrice,
+      mode: tradingMode,
+      timestampOpen: new Date(),
+    };
+    
+    setOpenPositions(prev => [newPosition, ...prev]);
+    
     if (Platform.OS !== "web") {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     }
@@ -118,8 +195,52 @@ export default function DashboardScreen() {
     setCurrentSignal(newSignal);
   };
 
+  // Handle closing a position
+  const handleClosePosition = (position: LivePosition) => {
+    // Get current price for P&L calculation
+    const priceData = getPrice(position.asset);
+    const currentPrice = priceData?.price || position.entryPrice;
+    
+    // Calculate P&L
+    const priceDiff = position.direction === "LONG"
+      ? currentPrice - position.entryPrice
+      : position.entryPrice - currentPrice;
+    const pnlPercent = (priceDiff / position.entryPrice) * position.leverage * 100;
+    const pnlAbsolute = position.margin * (pnlPercent / 100);
+    
+    // Update balances
+    const returnedAmount = position.margin + pnlAbsolute;
+    setAvailableBalance(prev => prev + returnedAmount);
+    setLockedBalance(prev => prev - position.margin);
+    setTotalBalance(prev => prev + pnlAbsolute);
+    
+    // Remove position
+    setOpenPositions(prev => prev.filter(p => p.id !== position.id));
+    
+    if (Platform.OS !== "web") {
+      Haptics.notificationAsync(
+        pnlAbsolute >= 0 
+          ? Haptics.NotificationFeedbackType.Success 
+          : Haptics.NotificationFeedbackType.Warning
+      );
+    }
+  };
+
+  // Get current price for selected asset
+  const currentPriceData = getPrice(selectedAsset);
+
   return (
     <ScreenContainer>
+      {/* Bot Activation Banner */}
+      <BotActivationBanner
+        isActive={isBotActivated}
+        action={botAction}
+        asset={selectedAsset}
+        direction={currentSignal?.direction || "LONG"}
+        countdownSeconds={3}
+        onCountdownComplete={handleBotCountdownComplete}
+      />
+
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -133,12 +254,42 @@ export default function DashboardScreen() {
       >
         {/* Header */}
         <View style={styles.header}>
-          <Text style={[styles.title, { color: colors.foreground }]}>
-            AQTE Trading
-          </Text>
-          <Text style={[styles.subtitle, { color: colors.muted }]}>
-            Automated Quantitative Trading Engine
-          </Text>
+          <View style={styles.headerRow}>
+            <View>
+              <Text style={[styles.title, { color: colors.foreground }]}>
+                AQTE Trading
+              </Text>
+              <Text style={[styles.subtitle, { color: colors.muted }]}>
+                Automated Quantitative Trading Engine
+              </Text>
+            </View>
+            {/* Price Connection Status */}
+            <View style={[styles.connectionBadge, { backgroundColor: priceConnected ? colors.success + "20" : colors.error + "20" }]}>
+              <View style={[styles.connectionDot, { backgroundColor: priceConnected ? colors.success : colors.error }]} />
+              <Text style={[styles.connectionText, { color: priceConnected ? colors.success : colors.error }]}>
+                {priceConnected ? "LIVE" : "OFFLINE"}
+              </Text>
+            </View>
+          </View>
+          
+          {/* Current Price Display */}
+          {currentPriceData && (
+            <View style={styles.priceDisplay}>
+              <Text style={[styles.priceLabel, { color: colors.muted }]}>
+                {selectedAsset.replace("USDT", "")} Price
+              </Text>
+              <Text style={[styles.priceValue, { color: colors.foreground }]}>
+                ${currentPriceData.priceFormatted}
+              </Text>
+              <Text style={[
+                styles.priceChange, 
+                { color: currentPriceData.change24hPercent >= 0 ? colors.success : colors.error }
+              ]}>
+                {currentPriceData.change24hPercent >= 0 ? "+" : ""}
+                {currentPriceData.change24hPercent.toFixed(2)}%
+              </Text>
+            </View>
+          )}
         </View>
 
         {/* Mode Indicator */}
@@ -160,6 +311,22 @@ export default function DashboardScreen() {
             isLoading={isLoadingBalance}
           />
         </View>
+
+        {/* Open Positions */}
+        {openPositions.length > 0 && (
+          <View style={styles.section}>
+            <Text style={[styles.sectionLabel, { color: colors.muted }]}>
+              OPEN POSITIONS ({openPositions.length})
+            </Text>
+            {openPositions.map(position => (
+              <LivePositionCard
+                key={position.id}
+                position={position}
+                onClose={handleClosePosition}
+              />
+            ))}
+          </View>
+        )}
 
         {/* Asset Selector */}
         <View style={styles.assetSection}>
@@ -253,6 +420,11 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     paddingBottom: 8,
   },
+  headerRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+  },
   title: {
     fontSize: 28,
     fontWeight: "800",
@@ -260,6 +432,41 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 14,
     marginTop: 4,
+  },
+  connectionBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    gap: 4,
+  },
+  connectionDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  connectionText: {
+    fontSize: 10,
+    fontWeight: "700",
+  },
+  priceDisplay: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    marginTop: 12,
+    gap: 8,
+  },
+  priceLabel: {
+    fontSize: 12,
+  },
+  priceValue: {
+    fontSize: 24,
+    fontWeight: "700",
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+  },
+  priceChange: {
+    fontSize: 14,
+    fontWeight: "600",
   },
   section: {
     paddingHorizontal: 16,

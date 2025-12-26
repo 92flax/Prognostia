@@ -152,3 +152,33 @@
 - [x] Support fixed USDT amount input
 - [x] Show calculated position size based on leverage
 - [x] Add trade execution modal with size selection
+
+
+## Real-Time Data & Analytics Engine
+
+### Database Schema Updates
+- [x] Expand trades table with detailed metrics (exit_price, fees, duration_seconds, timestamps)
+- [x] Add user_stats table for aggregated performance (win_rate, profit_factor, max_drawdown)
+- [x] Add balance_history table for equity curve tracking
+
+### Analytics Engine (lib/analytics-engine.ts)
+- [x] Create generateProfitProjection() function
+- [x] Analyze last 50 trades for WinRate and AvgWin/AvgLoss
+- [x] Calculate projected equity curve for next 30 days
+- [x] Make projection self-correcting based on actual performance
+
+### Real-Time Price Engine
+- [x] Implement price polling mechanism (1-2 second intervals)
+- [x] Format all prices with 2 decimal places (toFixed(2))
+- [x] Ensure immediate UI updates on price changes
+
+### Bot Activation UI
+- [x] Create countdown indicator "🤖 BOT ACTIVATED: Buying BTC Long in 3s..."
+- [x] Add pulsating "Live" badge for active positions
+- [x] Show explicit bot action feedback on Dashboard
+
+### Portfolio Equity Chart
+- [x] Create equity curve chart component
+- [x] Show past real equity curve (actual balance history)
+- [x] Show projected future path (dotted line with confidence bands)
+- [x] Display performance stats (win rate, profit factor, expectancy)
