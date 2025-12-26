@@ -31,29 +31,15 @@ export default function TabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: "Dashboard",
-          tabBarIcon: ({ color }) => <IconSymbol size={26} name="house.fill" color={color} />,
+          title: "Signals",
+          tabBarIcon: ({ color }) => <IconSymbol size={26} name="bolt.fill" color={color} />,
         }}
       />
       <Tabs.Screen
-        name="ai"
+        name="history"
         options={{
-          title: "AI",
-          tabBarIcon: ({ color }) => <IconSymbol size={26} name="brain.head.profile" color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="risk"
-        options={{
-          title: "Risk",
-          tabBarIcon: ({ color }) => <IconSymbol size={26} name="shield.checkered" color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="portfolio"
-        options={{
-          title: "Portfolio",
-          tabBarIcon: ({ color }) => <IconSymbol size={26} name="briefcase.fill" color={color} />,
+          title: "History",
+          tabBarIcon: ({ color }) => <IconSymbol size={26} name="clock.fill" color={color} />,
         }}
       />
       <Tabs.Screen
@@ -61,6 +47,25 @@ export default function TabLayout() {
         options={{
           title: "Settings",
           tabBarIcon: ({ color }) => <IconSymbol size={26} name="gearshape.fill" color={color} />,
+        }}
+      />
+      {/* Hidden tabs - keep files but don't show in tab bar */}
+      <Tabs.Screen
+        name="ai"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="risk"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="portfolio"
+        options={{
+          href: null,
         }}
       />
     </Tabs>

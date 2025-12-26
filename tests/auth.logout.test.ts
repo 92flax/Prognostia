@@ -20,15 +20,10 @@ function createAuthContext(): { ctx: TrpcContext; clearedCookies: CookieCall[] }
     name: "Sample User",
     loginMethod: "manus",
     role: "user",
-    // Trading preferences
-    preferredLeverage: "1.0",
-    riskTolerance: "0.02",
-    useSimulationMode: true,
-    kellyFraction: "half",
-    // Bitget credentials (null for test)
-    bitgetApiKey: null,
-    bitgetSecret: null,
-    bitgetPassphrase: null,
+    // Signal preferences
+    preferredSafetyFactor: "2.0",
+    preferredRiskReward: "2.0",
+    maxLeverageLimit: 20,
     // Timestamps
     createdAt: new Date(),
     updatedAt: new Date(),

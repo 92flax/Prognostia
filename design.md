@@ -1,11 +1,10 @@
-# AQTE (Prognostia) - Mobile App Interface Design
+# AQTE Signal Intelligence Dashboard - Design Document
 
 ## Overview
 
-AQTE (Automated Quantitative Trading Engine) is a mobile application for AI-powered algorithmic trading of Bitcoin/crypto and stocks. The app follows Apple Human Interface Guidelines (HIG) for a native iOS feel with mobile portrait orientation (9:16) and one-handed usage.
+AQTE has pivoted from an automated trading engine to a **Signal Intelligence Dashboard** - a decision support system that provides complete, mathematically calculated trade setups for manual execution on Bitget.
 
-**Primary Exchange**: Bitget (high-leverage crypto trading)
-**Secondary Exchange**: Alpaca (stocks)
+**Core Philosophy**: The app does NOT execute trades. It provides high-precision signals with all parameters (Entry, Leverage, SL, TP) that users copy and execute manually on their exchange.
 
 ---
 
@@ -13,163 +12,113 @@ AQTE (Automated Quantitative Trading Engine) is a mobile application for AI-powe
 
 | Screen | Purpose |
 |--------|---------|
-| **Dashboard** | Main overview with trading mode toggle, portfolio value, and quick metrics |
-| **AI Predictions** | TimesFM price forecasts, FinBERT sentiment analysis, and Explainable AI |
-| **Risk Management** | Kelly Criterion, Volatility-Based Leverage, Liquidation Distance, Chandelier Exit |
-| **Portfolio** | Holdings, positions, and trade history |
-| **Settings** | Bitget/Alpaca connections, risk parameters, and app preferences |
+| **Signals** | Main screen with Active Signal Card - the hero component |
+| **History** | Past signals with setups for reference and backtesting |
+| **Settings** | Signal generation parameters and app preferences |
 
 ---
 
 ## Primary Content and Functionality
 
-### 1. Dashboard Screen (Home Tab)
-- **Trading Mode Toggle**: Switch between Live and Simulation (Paper Trading) modes
-- **Mode Indicator Badge**: Shows current mode (LIVE/SIM) in header
-- **Paper Wallet Card** (Simulation Mode):
-  - Virtual USDT/BTC/ETH balances
-  - Simulated P&L and win rate
-  - Reset button to restart simulation
-- **Portfolio Summary Card** (Live Mode):
-  - Total value, daily P&L, percentage change
-- **AI Signal Indicator**: Current bullish/bearish/neutral signal from AI
-- **Quick Actions**: Buy/Sell buttons (Paper Buy/Sell in simulation)
-- **Market Overview**: BTC and top crypto prices with mini sparkline charts
-- **Recent Activity**: Last 3-5 trades (filtered by mode)
+### 1. Signals Screen (Home Tab)
+- **Active Signal Card** (Hero Component)
+  - Direction Badge: BIG "BUY / LONG" (Green) or "SELL / SHORT" (Red)
+  - 4 Critical Numbers in high-visibility format:
+    - **LEV**: Recommended leverage (e.g., "7x Isolated")
+    - **ENTRY**: Market price
+    - **TP**: Take Profit price
+    - **SL**: Stop Loss price
+  - Risk Level indicator (LOW/MEDIUM/HIGH/EXTREME)
+  - Rationale text explaining the signal
+  - **Copy Signal** button (copies full setup to clipboard)
+- **Market Tickers**: Horizontal scroll with BTC, ETH, SOL prices
+- **Signal Stats**: Today's signals count, 7-day win rate
+- **How to Use Guide**: Step-by-step instructions
 
-### 2. AI Predictions Screen
-- **Combined AI Signal Card**:
-  - Direction (Bullish/Bearish/Neutral)
-  - Confidence percentage
-  - Last updated timestamp
-- **Explainable AI Card** (NEW):
-  - Summary explanation: "Why Bullish? FinBERT sentiment is +0.8 AND Price is above 200 EMA"
-  - Contributing factors with weights:
-    - FinBERT Sentiment Score
-    - Price vs 200 EMA
-    - RSI Level
-    - Volume Analysis
-    - Volatility Assessment
-  - Expandable factor details
-- **Price Forecast Section**:
-  - TimesFM model predictions with confidence intervals
-  - 24h, 7d, 30d forecast horizons
-  - Visual chart with predicted price path
-- **Sentiment Analysis Section**:
-  - FinBERT sentiment score (-1 to +1) gauge
-  - Recent news headlines with individual sentiment
-  - Aggregated market sentiment trend
+### 2. History Screen
+- **Signal History List**: Compact cards with past signals
+  - Direction badge, Asset name
+  - LEV, ENTRY, TP, SL values
+  - Confidence score
+  - Timestamp
+  - Copy button
+- **Summary Stats**: Total signals, avg confidence, long/short ratio
 
-### 3. Risk Management Screen
-- **Risk Overview Card**:
-  - Overall risk score (0-100)
-  - Current leverage display
-  - Liquidation distance quick stat
-  - Kelly fraction indicator
-- **Liquidation Distance Card** (NEW):
-  - Visual gauge showing distance to liquidation
-  - Current price vs liquidation price
-  - Risk level indicator (Safe/Warning/Danger)
-  - Margin ratio display
-- **Smart Leverage Card** (NEW):
-  - Volatility-Based Leverage selector
-  - Formula: MaxLeverage = (1 / DailyVolatility) * SafetyFactor
-  - Recommended leverage based on current volatility
-  - Safety factor adjustment (0.5x to 2.0x)
-  - Post Only toggle for limit orders
-- **Kelly Criterion Card**:
-  - Optimal position size recommendation
-  - Win rate and profit/loss ratio display
-  - **Kelly Fraction Selector**: Quarter/Half/Full Kelly
-  - Automatic Quarter-Kelly recommendation for >20x leverage
-- **Volatility Targeting Card**:
-  - Current vs target volatility (20% p.a. default)
-  - Rolling volatility chart
-  - Position adjustment recommendations
-- **Chandelier Exit Card**:
-  - Current ATR value
-  - Stop-loss levels for open positions
-  - Trailing stop visualization
-- **High Leverage Warning**: Displayed when leverage >20x
-
-### 4. Portfolio Screen
-- **Holdings List**:
-  - Asset name, quantity, current value
-  - P&L per position with color coding
-  - Allocation percentage
-- **Allocation Chart**: Visual breakdown of portfolio
-- **Trade History**:
-  - Recent executed trades
-  - Order type, price, quantity, timestamp
-  - Simulated trades marked with badge
-- **Performance Metrics**:
-  - Total return, Sharpe ratio, max drawdown, Calmar ratio
-
-### 5. Settings Screen
-- **Exchange Connections**:
-  - **Bitget** (Primary): API Key, Secret, Passphrase
-  - **Alpaca**: API Key, Secret
-  - Connection status with balance display
-- **Risk Parameters**:
-  - Max leverage slider (1-100x)
-  - Volatility target adjustment
-  - ATR multiplier for Chandelier Exit
-- **AI Models**:
-  - TimesFM version display
-  - FinBERT model info
-  - XAI Engine version
-- **App Preferences**:
-  - Theme (light/dark)
-  - Notifications toggle
-  - Currency display preference
+### 3. Settings Screen
+- **Signal Parameters**:
+  - Safety Factor slider (1-4x)
+  - Risk-Reward Ratio slider (1.5-4:1)
+  - Max Leverage slider (5-50x)
+  - ATR Multiplier slider (2-5x)
+- **Signal Engine Info**: Formulas used for calculations
+- **Notification Preferences**: New signal alerts, high confidence only
+- **App Preferences**: Dark mode, currency display
+- **About**: Version, support links
 
 ---
 
 ## Key User Flows
 
-### Flow 1: Paper Trading (Simulation Mode)
-1. User opens app → Dashboard screen
-2. Toggles to "Simulation" mode
-3. Paper Wallet Card appears with virtual $10,000 balance
-4. User taps "Paper Buy" button
-5. Executes simulated trade at real-time prices
-6. Trade logged to database without API call
-7. Virtual balance updated
+### Primary Flow: Copy and Execute Signal
+1. User opens app → Sees Active Signal Card
+2. Reviews the setup (LEV, ENTRY, TP, SL)
+3. Reads the rationale
+4. Taps "Copy Signal" → Full setup copied to clipboard
+5. Opens Bitget app
+6. Creates position with copied parameters
+7. Executes trade manually
 
-### Flow 2: View AI Trading Signal with Explanation
-1. User opens app → Dashboard screen
-2. Sees AI Signal Indicator showing "Bullish" with confidence
-3. Taps signal card → Navigates to AI Predictions screen
-4. Views Explainable AI Card:
-   - "Why Bullish? FinBERT sentiment is +0.8 (Very Positive) AND Price is above 200 EMA"
-5. Expands to see all contributing factors with weights
-6. Scrolls to see detailed TimesFM forecast chart
+### Secondary Flow: Review Past Signals
+1. User taps History tab
+2. Scrolls through past signals
+3. Taps Copy on any signal to reuse setup
 
-### Flow 3: High-Leverage Risk Management
-1. User taps Risk tab in bottom navigation
-2. Views Liquidation Distance card showing "1.2% away"
-3. Sees high leverage warning (using 50x)
-4. Smart Leverage Card recommends 15x based on volatility
-5. Adjusts leverage using volatility-based selector
-6. Kelly Card automatically switches to Quarter-Kelly
-7. Reviews updated liquidation distance (now 6.7% away)
-
-### Flow 4: Configure Bitget Exchange
+### Settings Flow: Adjust Signal Parameters
 1. User taps Settings tab
-2. Taps "Bitget" exchange card (marked as PRIMARY)
-3. Sees passphrase requirement hint
-4. Enters API Key, Secret, and Passphrase
-5. Taps "Test Connection"
-6. Success indicator shows connected with balance
+2. Adjusts Safety Factor for more/less conservative leverage
+3. Changes Risk-Reward Ratio for wider/tighter TPs
+4. Saves preferences
+5. New signals reflect updated parameters
 
-### Flow 5: Execute Live Trade
-1. User on Dashboard in "Live" mode
-2. Sees bullish signal with high confidence
-3. Checks Risk tab for position sizing (Half-Kelly: $2,450)
-4. Returns to Dashboard, taps "Buy" button
-5. Confirms order with Post Only option
-6. Order sent to Bitget API
-7. Success notification with trade details
+---
+
+## Signal Engine Logic
+
+### Leverage Calculation
+```
+Leverage = 1 / (DailyVolatility × SafetyFactor)
+```
+- Lower volatility = Higher safe leverage
+- Higher safety factor = Lower leverage recommendation
+- Clamped between minLeverage and maxLeverage
+
+### Stop Loss (Chandelier Exit)
+```
+Long SL = Entry - (ATR × Multiplier)
+Short SL = Entry + (ATR × Multiplier)
+```
+- Default ATR multiplier: 3.0
+- Uses 14-period ATR
+
+### Take Profit (Risk-Reward Based)
+```
+Long TP = Entry + (|Entry - SL| × RRR)
+Short TP = Entry - (|Entry - SL| × RRR)
+```
+- Default Risk-Reward Ratio: 2.0
+
+### Direction Logic
+Weighted combination of:
+- Sentiment Score (40% weight)
+- RSI (30% weight)
+- EMA 200 position (30% weight)
+
+### Confidence Score
+Based on alignment of:
+- Sentiment strength
+- RSI extremes (oversold/overbought)
+- Price vs EMA trend
+- Volatility conditions
 
 ---
 
@@ -177,84 +126,122 @@ AQTE (Automated Quantitative Trading Engine) is a mobile application for AI-powe
 
 | Token | Light Mode | Dark Mode | Usage |
 |-------|------------|-----------|-------|
-| `primary` | #0066FF | #4D94FF | Buttons, links, active states |
-| `background` | #F8FAFC | #0F172A | Screen backgrounds |
-| `surface` | #FFFFFF | #1E293B | Cards, elevated surfaces |
-| `foreground` | #0F172A | #F1F5F9 | Primary text |
-| `muted` | #64748B | #94A3B8 | Secondary text |
-| `border` | #E2E8F0 | #334155 | Dividers, card borders |
-| `success` | #10B981 | #34D399 | Profit, bullish, positive, simulation mode |
-| `warning` | #F59E0B | #FBBF24 | Caution, neutral signals |
-| `error` | #EF4444 | #F87171 | Loss, bearish, errors, live mode warning |
+| `primary` | #0066FF | #4D94FF | Buttons, accents, active states |
+| `background` | #FFFFFF | #0A0A0A | Screen backgrounds |
+| `surface` | #F5F5F5 | #1A1A1A | Cards, elevated surfaces |
+| `foreground` | #111111 | #FFFFFF | Primary text |
+| `muted` | #666666 | #888888 | Secondary text, captions |
+| `border` | #E0E0E0 | #333333 | Dividers, card borders |
+| `success` | #00C853 | #00E676 | Long signals, TP, positive |
+| `error` | #FF3D00 | #FF5252 | Short signals, SL, negative |
+| `warning` | #FF9800 | #FFB74D | Caution, medium risk |
 
-### Brand Colors
-- **Primary Blue**: #0066FF - Represents trust, technology, finance
-- **Bitget Green**: #00D4AA - Exchange branding
-- **Accent Green**: #10B981 - Profit indicators
-- **Accent Red**: #EF4444 - Loss indicators, live mode warnings
+---
+
+## Design Principles
+
+### 1. Glanceability
+- User sees the signal in 1 second
+- Critical numbers (LEV, TP, SL) are the largest text on screen
+- Direction is immediately clear via color and badge
+
+### 2. High Visibility
+- Large, bold typography for numbers
+- Color-coded risk levels
+- Clear visual hierarchy
+
+### 3. Simplicity
+- No exchange connections required
+- No API keys needed
+- No trade execution - just information
+
+### 4. Trust
+- Transparent formulas shown in Settings
+- Rationale explains every signal
+- Historical accuracy trackable
+
+---
+
+## Removed Features (from v1)
+
+The following features were removed in the pivot to Signal Intelligence:
+- Exchange connections (Binance/Bitget/Alpaca)
+- API key management
+- Trade execution
+- Paper trading / simulation mode
+- Portfolio tracking
+- Quick buy/sell buttons
+- Real-time position monitoring
 
 ---
 
 ## Database Schema (PostgreSQL)
 
-### New Tables
-- **trades**: Logs all executed trades (pair, side, entry_price, leverage, pnl, status, is_simulated)
-- **signals**: Stores AI predictions for backtesting (timesfm_output, finbert_output, timestamp)
-- **paper_wallets**: Tracks virtual balances for simulation mode (user_id, usdt_balance, btc_balance, etc.)
+### signals Table
+| Field | Type | Description |
+|-------|------|-------------|
+| id | serial | Primary key |
+| asset | varchar | Trading pair (e.g., BTCUSDT) |
+| direction | enum | LONG or SHORT |
+| entry_price | decimal | Entry price at signal time |
+| tp_price | decimal | Take profit price |
+| sl_price | decimal | Stop loss price |
+| leverage_recommendation | decimal | Recommended leverage |
+| risk_level | enum | LOW/MEDIUM/HIGH/EXTREME |
+| confidence_score | integer | 0-100 confidence |
+| rationale | text | Human-readable explanation |
+| created_at | timestamp | Signal generation time |
 
----
-
-## Component Patterns
-
-### Cards
-- Rounded corners (16px radius)
-- Subtle shadow on light mode
-- Border on dark mode
-- Padding: 16px
-
-### Trading Mode Toggle
-- Pill-shaped toggle with sliding indicator
-- Green for Simulation, Red for Live
-- Status text below toggle
-
-### Liquidation Gauge
-- Semi-circular gauge visualization
-- Color zones: Green (safe), Yellow (warning), Red (danger)
-- Current position indicator dot
-
-### Kelly Fraction Selector
-- Three-button selector (¼, ½, Full)
-- "REC" badge on recommended option
-- Warning when not using recommended for high leverage
-
-### Charts
-- Line charts for price history and forecasts
-- Area fill for confidence intervals
-- Color-coded (green for up, red for down)
-
-### Bottom Tab Bar
-- 5 tabs: Dashboard, AI, Risk, Portfolio, Settings
-- SF Symbols icons
-- Active state with primary color
+### signal_interactions Table
+| Field | Type | Description |
+|-------|------|-------------|
+| id | serial | Primary key |
+| signal_id | integer | FK to signals |
+| was_copied | boolean | User copied the signal |
+| was_executed | boolean | User confirmed execution |
+| user_feedback | varchar | good/bad/neutral |
 
 ---
 
 ## Typography
 
-- **Headings**: SF Pro Display Bold, 24-32px
-- **Subheadings**: SF Pro Text Semibold, 18-20px
+- **Headings**: SF Pro Display Bold, 28-32px
+- **Signal Numbers**: SF Pro Display Bold, 32-40px
 - **Body**: SF Pro Text Regular, 16px
 - **Caption**: SF Pro Text Regular, 14px
-- **Metrics**: SF Pro Display Bold, 28-36px (monospace for numbers)
+- **Direction Badge**: SF Pro Display Bold, 24px
 
 ---
 
 ## Interaction Patterns
 
-- **Pull to Refresh**: On Dashboard and Portfolio screens
-- **Haptic Feedback**: On button taps and successful actions
-- **Loading States**: Skeleton screens while fetching data
-- **Error States**: Inline error messages with retry option
-- **Empty States**: Helpful message when no data available
-- **Mode Confirmation**: Warning dialog when switching to Live mode
-- **High Leverage Warnings**: Prominent alerts for dangerous positions
+- **Pull to Refresh**: Regenerate signal on Signals screen
+- **Haptic Feedback**: On copy button tap
+- **Copy Confirmation**: Brief "Copied!" state change
+- **Loading States**: Skeleton while calculating
+- **Error States**: Inline retry option
+
+---
+
+## Clipboard Format
+
+When user taps "Copy Signal", the following format is copied:
+
+```
+🟢 BTCUSDT LONG
+
+📊 TRADE SETUP
+━━━━━━━━━━━━━━━━━━
+LEV: 7x Isolated ⚠️
+ENTRY: $98,432.50
+TP: $105,850.00
+SL: $91,015.00
+━━━━━━━━━━━━━━━━━━
+R:R = 1:2
+Confidence: 72%
+
+💡 Strong Bullish Sentiment + Above 200 EMA
+
+⏰ 12/26/2024, 8:45:00 AM
+#AQTE #Crypto #Trading
+```

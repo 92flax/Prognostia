@@ -70,6 +70,12 @@ const MAPPING = {
   "sparkles": "auto-awesome",
   "lightbulb.fill": "lightbulb",
   "wand.and.stars": "auto-fix-high",
+  // Signal card icons
+  "gauge.with.needle.fill": "speed",
+  "doc.on.doc.fill": "content-copy",
+  "arrow.clockwise": "refresh",
+  "paperplane.fill": "send",
+  "chevron.left.forwardslash.chevron.right": "code",
 } as IconMapping;
 
 /**

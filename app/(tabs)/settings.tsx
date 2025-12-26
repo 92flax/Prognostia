@@ -3,37 +3,22 @@ import { useState } from "react";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { SettingsRow } from "@/components/settings-row";
-import { ExchangeConnectionCard } from "@/components/exchange-connection-card";
 import { SliderSetting } from "@/components/slider-setting";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useColors } from "@/hooks/use-colors";
-import { mockExchangeConnections, mockRiskSettings } from "@/lib/mock-data";
 
 export default function SettingsScreen() {
   const colors = useColors();
 
-  // Risk settings state
-  const [maxLeverage, setMaxLeverage] = useState(mockRiskSettings.maxLeverage);
-  const [targetVolatility, setTargetVolatility] = useState(mockRiskSettings.targetVolatility * 100);
-  const [atrMultiplier, setAtrMultiplier] = useState(mockRiskSettings.atrMultiplier);
+  // Signal generation settings
+  const [safetyFactor, setSafetyFactor] = useState(2.0);
+  const [riskRewardRatio, setRiskRewardRatio] = useState(2.0);
+  const [maxLeverage, setMaxLeverage] = useState(20);
+  const [atrMultiplier, setAtrMultiplier] = useState(3.0);
 
   // App settings state
   const [notifications, setNotifications] = useState(true);
   const [darkMode, setDarkMode] = useState(false);
-  const [biometrics, setBiometrics] = useState(false);
-
-  const exchanges = mockExchangeConnections;
-
-  const handleExchangePress = (name: string) => {
-    Alert.alert(
-      "Exchange Configuration",
-      `Configure ${name} API credentials`,
-      [
-        { text: "Cancel", style: "cancel" },
-        { text: "Configure", onPress: () => {} },
-      ]
-    );
-  };
 
   return (
     <ScreenContainer>
@@ -41,53 +26,46 @@ export default function SettingsScreen() {
         {/* Header */}
         <View className="px-4 pt-4 pb-2">
           <Text className="text-3xl font-bold text-foreground">Settings</Text>
-          <Text className="text-sm text-muted mt-1">Configure Your Trading Engine</Text>
+          <Text className="text-sm text-muted mt-1">Configure Signal Generation</Text>
         </View>
 
-        {/* Exchange Connections */}
+        {/* Signal Parameters */}
         <View className="px-4 py-3">
           <Text className="text-lg font-semibold text-foreground mb-3">
-            Exchange Connections
-          </Text>
-          <View className="gap-3">
-            {exchanges.map((exchange) => (
-              <ExchangeConnectionCard
-                key={exchange.id}
-                connection={exchange}
-                onPress={() => handleExchangePress(exchange.displayName)}
-              />
-            ))}
-          </View>
-        </View>
-
-        {/* Risk Parameters */}
-        <View className="px-4 py-3">
-          <Text className="text-lg font-semibold text-foreground mb-3">
-            Risk Parameters
+            Signal Parameters
           </Text>
           <View className="bg-surface rounded-2xl px-4 border border-border">
             <SliderSetting
+              title="Safety Factor"
+              value={safetyFactor}
+              min={1}
+              max={4}
+              step={0.5}
+              formatValue={(v) => `${v}x`}
+              onValueChange={setSafetyFactor}
+            />
+            <SliderSetting
+              title="Risk-Reward Ratio"
+              value={riskRewardRatio}
+              min={1.5}
+              max={4}
+              step={0.5}
+              formatValue={(v) => `1:${v}`}
+              onValueChange={setRiskRewardRatio}
+            />
+            <SliderSetting
               title="Max Leverage"
               value={maxLeverage}
-              min={1}
-              max={10}
-              step={0.5}
+              min={5}
+              max={50}
+              step={5}
               formatValue={(v) => `${v}x`}
               onValueChange={setMaxLeverage}
             />
             <SliderSetting
-              title="Target Volatility"
-              value={targetVolatility}
-              min={5}
-              max={50}
-              step={5}
-              formatValue={(v) => `${v}%`}
-              onValueChange={setTargetVolatility}
-            />
-            <SliderSetting
-              title="ATR Multiplier"
+              title="ATR Multiplier (SL)"
               value={atrMultiplier}
-              min={1}
+              min={2}
               max={5}
               step={0.5}
               formatValue={(v) => `${v}x`}
@@ -95,46 +73,58 @@ export default function SettingsScreen() {
               className="border-b-0"
             />
           </View>
+          
+          {/* Parameter Explanation */}
+          <View className="mt-3 p-3 bg-primary/10 rounded-xl">
+            <Text className="text-xs text-muted leading-relaxed">
+              <Text className="font-semibold text-foreground">Safety Factor</Text>: Higher = lower leverage recommendation{'\n'}
+              <Text className="font-semibold text-foreground">Risk-Reward</Text>: TP distance relative to SL{'\n'}
+              <Text className="font-semibold text-foreground">ATR Multiplier</Text>: Stop loss distance (higher = wider stops)
+            </Text>
+          </View>
         </View>
 
-        {/* AI Models */}
+        {/* Signal Engine Info */}
         <View className="px-4 py-3">
           <Text className="text-lg font-semibold text-foreground mb-3">
-            AI Models
+            Signal Engine
           </Text>
           <View className="bg-surface rounded-2xl px-4 border border-border">
             <SettingsRow
-              title="TimesFM Model"
-              value="google/timesfm-2.0"
+              title="Leverage Formula"
+              value="1 / (Vol × Safety)"
               icon={
                 <View className="w-8 h-8 rounded-full bg-primary/20 items-center justify-center">
-                  <IconSymbol name="chart.line.uptrend.xyaxis" size={16} color={colors.primary} />
+                  <IconSymbol name="gauge.with.needle.fill" size={16} color={colors.primary} />
                 </View>
               }
-              showChevron
-              onPress={() => {}}
             />
             <SettingsRow
-              title="FinBERT Model"
-              value="ProsusAI/finbert"
+              title="Stop Loss"
+              value="Chandelier Exit (ATR)"
+              icon={
+                <View className="w-8 h-8 rounded-full bg-error/20 items-center justify-center">
+                  <IconSymbol name="xmark.circle.fill" size={16} color={colors.error} />
+                </View>
+              }
+            />
+            <SettingsRow
+              title="Take Profit"
+              value="R:R Based"
               icon={
                 <View className="w-8 h-8 rounded-full bg-success/20 items-center justify-center">
-                  <IconSymbol name="brain.head.profile" size={16} color={colors.success} />
+                  <IconSymbol name="checkmark.circle.fill" size={16} color={colors.success} />
                 </View>
               }
-              showChevron
-              onPress={() => {}}
             />
             <SettingsRow
-              title="Inference Backend"
-              value="GPU (CUDA)"
+              title="Direction Logic"
+              value="Sentiment + EMA + RSI"
               icon={
                 <View className="w-8 h-8 rounded-full bg-warning/20 items-center justify-center">
-                  <IconSymbol name="chevron.left.forwardslash.chevron.right" size={16} color={colors.warning} />
+                  <IconSymbol name="brain.head.profile" size={16} color={colors.warning} />
                 </View>
               }
-              showChevron
-              onPress={() => {}}
               className="border-b-0"
             />
           </View>
@@ -147,53 +137,18 @@ export default function SettingsScreen() {
           </Text>
           <View className="bg-surface rounded-2xl px-4 border border-border">
             <SettingsRow
-              title="Push Notifications"
-              subtitle="Get alerts for signals and trades"
+              title="New Signal Alerts"
+              subtitle="Get notified when new signals are generated"
               toggle
               toggleValue={notifications}
               onToggle={setNotifications}
             />
             <SettingsRow
-              title="Price Alerts"
-              subtitle="Notify when price targets are hit"
+              title="High Confidence Only"
+              subtitle="Only notify for signals with >70% confidence"
               toggle
               toggleValue={true}
               onToggle={() => {}}
-            />
-            <SettingsRow
-              title="Trade Confirmations"
-              subtitle="Confirm before executing trades"
-              toggle
-              toggleValue={true}
-              onToggle={() => {}}
-              className="border-b-0"
-            />
-          </View>
-        </View>
-
-        {/* Security */}
-        <View className="px-4 py-3">
-          <Text className="text-lg font-semibold text-foreground mb-3">
-            Security
-          </Text>
-          <View className="bg-surface rounded-2xl px-4 border border-border">
-            <SettingsRow
-              title="Biometric Authentication"
-              subtitle="Use Face ID or fingerprint"
-              toggle
-              toggleValue={biometrics}
-              onToggle={setBiometrics}
-            />
-            <SettingsRow
-              title="Change PIN"
-              showChevron
-              onPress={() => {}}
-            />
-            <SettingsRow
-              title="Two-Factor Authentication"
-              value="Enabled"
-              showChevron
-              onPress={() => {}}
               className="border-b-0"
             />
           </View>
@@ -216,12 +171,6 @@ export default function SettingsScreen() {
               value="USD"
               showChevron
               onPress={() => {}}
-            />
-            <SettingsRow
-              title="Language"
-              value="English"
-              showChevron
-              onPress={() => {}}
               className="border-b-0"
             />
           </View>
@@ -235,12 +184,11 @@ export default function SettingsScreen() {
           <View className="bg-surface rounded-2xl px-4 border border-border">
             <SettingsRow
               title="Version"
-              value="1.0.0"
+              value="2.0.0"
             />
             <SettingsRow
-              title="Terms of Service"
-              showChevron
-              onPress={() => {}}
+              title="Signal Intelligence Dashboard"
+              subtitle="Decision support for manual trading"
             />
             <SettingsRow
               title="Privacy Policy"
@@ -256,41 +204,43 @@ export default function SettingsScreen() {
           </View>
         </View>
 
-        {/* Danger Zone */}
+        {/* Reset */}
         <View className="px-4 py-3">
-          <View className="bg-surface rounded-2xl px-4 border border-error/30">
+          <View className="bg-surface rounded-2xl px-4 border border-warning/30">
             <SettingsRow
-              title="Reset All Settings"
-              danger
+              title="Reset to Defaults"
+              subtitle="Restore all signal parameters to default values"
               showChevron
               onPress={() => {
                 Alert.alert(
                   "Reset Settings",
-                  "Are you sure you want to reset all settings to defaults?",
+                  "Reset all signal parameters to their default values?",
                   [
                     { text: "Cancel", style: "cancel" },
-                    { text: "Reset", style: "destructive", onPress: () => {} },
-                  ]
-                );
-              }}
-            />
-            <SettingsRow
-              title="Delete Account"
-              danger
-              showChevron
-              onPress={() => {
-                Alert.alert(
-                  "Delete Account",
-                  "This action cannot be undone. All your data will be permanently deleted.",
-                  [
-                    { text: "Cancel", style: "cancel" },
-                    { text: "Delete", style: "destructive", onPress: () => {} },
+                    { 
+                      text: "Reset", 
+                      onPress: () => {
+                        setSafetyFactor(2.0);
+                        setRiskRewardRatio(2.0);
+                        setMaxLeverage(20);
+                        setAtrMultiplier(3.0);
+                      } 
+                    },
                   ]
                 );
               }}
               className="border-b-0"
             />
           </View>
+        </View>
+
+        {/* Disclaimer */}
+        <View className="px-4 py-3">
+          <Text className="text-muted text-xs text-center leading-relaxed">
+            This app provides trading signals for informational purposes only. 
+            It does not execute trades or connect to exchanges. 
+            Always trade responsibly.
+          </Text>
         </View>
       </ScrollView>
     </ScreenContainer>

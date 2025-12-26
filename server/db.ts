@@ -1,17 +1,14 @@
-import { eq } from "drizzle-orm";
+import { eq, desc } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { 
   InsertUser, 
   users, 
-  trades, 
   signals, 
-  paperWallets,
-  InsertTrade,
+  signalInteractions,
   InsertSignal,
-  InsertPaperWallet,
-  Trade,
+  InsertSignalInteraction,
   Signal,
-  PaperWallet,
+  SignalInteraction,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
@@ -107,86 +104,18 @@ export async function getUserByOpenId(openId: string) {
   return result.length > 0 ? result[0] : undefined;
 }
 
-export async function updateUserTradingPrefs(
+export async function updateUserPreferences(
   userId: number,
   prefs: {
-    preferredLeverage?: string;
-    riskTolerance?: string;
-    useSimulationMode?: boolean;
-    kellyFraction?: string;
+    preferredSafetyFactor?: string;
+    preferredRiskReward?: string;
+    maxLeverageLimit?: number;
   }
 ) {
   const db = await getDb();
   if (!db) return;
 
   await db.update(users).set(prefs).where(eq(users.id, userId));
-}
-
-export async function updateUserBitgetCredentials(
-  userId: number,
-  credentials: {
-    bitgetApiKey?: string;
-    bitgetSecret?: string;
-    bitgetPassphrase?: string;
-  }
-) {
-  const db = await getDb();
-  if (!db) return;
-
-  await db.update(users).set(credentials).where(eq(users.id, userId));
-}
-
-// ============================================
-// TRADE OPERATIONS
-// ============================================
-
-export async function createTrade(trade: InsertTrade): Promise<Trade | undefined> {
-  const db = await getDb();
-  if (!db) {
-    console.warn("[Database] Cannot create trade: database not available");
-    return undefined;
-  }
-
-  const result = await db.insert(trades).values(trade).returning();
-  return result[0];
-}
-
-export async function closeTrade(
-  tradeId: number,
-  exitData: {
-    exitPrice: string;
-    realizedPnl: string;
-    realizedPnlPercent: string;
-    fees?: string;
-    status: "closed" | "liquidated";
-  }
-): Promise<void> {
-  const db = await getDb();
-  if (!db) return;
-
-  await db.update(trades).set({
-    ...exitData,
-    closedAt: new Date(),
-  }).where(eq(trades.id, tradeId));
-}
-
-export async function getOpenTrades(userId: number): Promise<Trade[]> {
-  const db = await getDb();
-  if (!db) return [];
-
-  const { and } = await import("drizzle-orm");
-  return db.select().from(trades)
-    .where(and(eq(trades.userId, userId), eq(trades.status, "open")));
-}
-
-export async function getTradeHistory(userId: number, limit = 50): Promise<Trade[]> {
-  const db = await getDb();
-  if (!db) return [];
-
-  return db.select().from(trades)
-    .where(eq(trades.userId, userId))
-    .orderBy(trades.createdAt)
-    .limit(limit);
 }
 
 // ============================================
@@ -204,22 +133,43 @@ export async function createSignal(signal: InsertSignal): Promise<Signal | undef
   return result[0];
 }
 
-export async function getRecentSignals(pair: string, limit = 10): Promise<Signal[]> {
+export async function getRecentSignals(asset: string, limit = 10): Promise<Signal[]> {
   const db = await getDb();
   if (!db) return [];
 
   return db.select().from(signals)
-    .where(eq(signals.pair, pair))
-    .orderBy(signals.createdAt)
+    .where(eq(signals.asset, asset))
+    .orderBy(desc(signals.createdAt))
     .limit(limit);
 }
 
-export async function updateSignalBacktest(
+export async function getAllRecentSignals(limit = 20): Promise<Signal[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  return db.select().from(signals)
+    .orderBy(desc(signals.createdAt))
+    .limit(limit);
+}
+
+export async function getSignalById(signalId: number): Promise<Signal | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const result = await db.select().from(signals)
+    .where(eq(signals.id, signalId))
+    .limit(1);
+
+  return result[0];
+}
+
+export async function updateSignalOutcome(
   signalId: number,
   data: {
-    actualPrice24h?: string;
-    actualPrice7d?: string;
-    wasCorrect?: boolean;
+    actualOutcome?: string;
+    actualPnlPercent?: string;
+    wasSuccessful?: boolean;
+    resolvedAt?: Date;
   }
 ): Promise<void> {
   const db = await getDb();
@@ -229,88 +179,45 @@ export async function updateSignalBacktest(
 }
 
 // ============================================
-// PAPER WALLET OPERATIONS
+// SIGNAL INTERACTION OPERATIONS
 // ============================================
 
-export async function getOrCreatePaperWallet(userId: number): Promise<PaperWallet | undefined> {
+export async function recordSignalInteraction(
+  interaction: InsertSignalInteraction
+): Promise<SignalInteraction | undefined> {
   const db = await getDb();
   if (!db) {
-    console.warn("[Database] Cannot get paper wallet: database not available");
+    console.warn("[Database] Cannot record interaction: database not available");
     return undefined;
   }
 
-  // Try to get existing wallet
-  const existing = await db.select().from(paperWallets)
-    .where(eq(paperWallets.userId, userId))
-    .limit(1);
-
-  if (existing.length > 0) {
-    return existing[0];
-  }
-
-  // Create new wallet with default balance
-  const result = await db.insert(paperWallets).values({
-    userId,
-    usdtBalance: "10000",
-    initialBalance: "10000",
-    peakBalance: "10000",
-  }).returning();
-
+  const result = await db.insert(signalInteractions).values(interaction).returning();
   return result[0];
 }
 
-export async function updatePaperWalletBalance(
-  userId: number,
-  balances: {
-    usdtBalance?: string;
-    btcBalance?: string;
-    ethBalance?: string;
-  }
-): Promise<void> {
+export async function markSignalCopied(signalId: number, userId?: number): Promise<void> {
   const db = await getDb();
   if (!db) return;
 
-  await db.update(paperWallets).set({
-    ...balances,
-    updatedAt: new Date(),
-  }).where(eq(paperWallets.userId, userId));
+  await db.insert(signalInteractions).values({
+    signalId,
+    userId: userId ?? null,
+    wasCopied: true,
+  });
 }
 
-export async function updatePaperWalletStats(
-  userId: number,
-  stats: {
-    totalTrades?: number;
-    winningTrades?: number;
-    totalPnl?: string;
-    maxDrawdown?: string;
-    peakBalance?: string;
-  }
-): Promise<void> {
+export async function getSignalStats(signalId: number): Promise<{
+  copyCount: number;
+  executeCount: number;
+}> {
   const db = await getDb();
-  if (!db) return;
+  if (!db) return { copyCount: 0, executeCount: 0 };
 
-  await db.update(paperWallets).set({
-    ...stats,
-    updatedAt: new Date(),
-    lastTradeAt: new Date(),
-  }).where(eq(paperWallets.userId, userId));
-}
+  const interactions = await db.select().from(signalInteractions)
+    .where(eq(signalInteractions.signalId, signalId));
 
-export async function resetPaperWallet(userId: number): Promise<void> {
-  const db = await getDb();
-  if (!db) return;
-
-  await db.update(paperWallets).set({
-    usdtBalance: "10000",
-    btcBalance: "0",
-    ethBalance: "0",
-    initialBalance: "10000",
-    peakBalance: "10000",
-    totalTrades: 0,
-    winningTrades: 0,
-    totalPnl: "0",
-    maxDrawdown: "0",
-    updatedAt: new Date(),
-    lastTradeAt: null,
-  }).where(eq(paperWallets.userId, userId));
+  return {
+    copyCount: interactions.filter(i => i.wasCopied).length,
+    executeCount: interactions.filter(i => i.wasExecuted).length,
+  };
 }

@@ -74,3 +74,28 @@
 - [x] Add textual explanation for AI signals
 - [x] Show FinBERT sentiment reasoning
 - [x] Display technical indicator context (EMA, etc.)
+
+## Pivot: Signal Intelligence Dashboard
+
+### Signal Engine (lib/signal-engine.ts)
+- [x] Create signal-engine.ts with core calculation logic
+- [x] Implement Volatility-Based Leverage Calculator: 1 / (DailyVolatility * SafetyFactor)
+- [x] Implement ATR-based Stop Loss (Chandelier Exit: ATR * 3.0)
+- [x] Implement Take Profit with 2:1 Risk-Reward Ratio
+- [x] Create SignalSetup type with all trade parameters
+
+### Database Schema
+- [x] Update signals table with new fields (entry_price, tp_price, sl_price, leverage_recommendation, rationale)
+
+### Dashboard Redesign
+- [x] Create ActiveSignalCard component with prominent direction badge
+- [x] Display LEV, ENTRY, TP, SL in high-visibility format
+- [x] Add signal rationale text
+- [x] Implement "Copy Signal" button (clipboard)
+- [x] Remove Quick Buy/Sell buttons
+
+### Simplification
+- [x] Remove Exchange Connections from Settings
+- [x] Remove Bitget/Alpaca API integration
+- [x] Remove Paper Trading mode (no longer needed)
+- [x] Simplify to public market data only
