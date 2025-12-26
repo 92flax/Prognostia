@@ -40,3 +40,37 @@
 - [x] Risk parameter sliders
 - [x] Theme toggle
 - [x] Notification preferences
+
+
+## Major Refactor - High Leverage Trading Engine
+
+### Architecture & Database
+- [x] Switch drizzle schema from MySQL to PostgreSQL (pg-core)
+- [x] Add trades table for logging executed trades
+- [x] Add signals table for AI predictions storage
+- [x] Add paper_wallets table for simulation mode
+
+### Bitget Integration
+- [x] Remove Binance references from design.md and UI
+- [x] Implement Bitget API support
+- [x] Implement Volatility-Based Smart Leverage selector
+- [x] Add Post Only toggle for limit orders
+
+### Paper Trading Mode
+- [x] Add Live/Simulation toggle on Dashboard
+- [x] Implement paper trade execution (DB only, no API)
+- [x] Track virtual balances in paper_wallets
+
+### Risk UI Updates
+- [x] Add Liquidation Distance metric to risk card
+- [x] Add Quarter-Kelly option for >20x leverage
+- [x] Update Kelly card with extended options
+
+### Settings Updates
+- [x] Replace Binance inputs with Bitget credentials
+- [x] Add Bitget Passphrase field
+
+### Explainable AI
+- [x] Add textual explanation for AI signals
+- [x] Show FinBERT sentiment reasoning
+- [x] Display technical indicator context (EMA, etc.)

@@ -5,21 +5,28 @@ import { ScreenContainer } from "@/components/screen-container";
 import { KellyCard } from "@/components/kelly-card";
 import { VolatilityCard } from "@/components/volatility-card";
 import { ChandelierCard } from "@/components/chandelier-card";
+import { LiquidationCard } from "@/components/liquidation-card";
+import { SmartLeverageCard } from "@/components/smart-leverage-card";
 import { MetricCard } from "@/components/metric-card";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useColors } from "@/hooks/use-colors";
-import { formatCurrency, formatPercentRaw } from "@/lib/format";
+import { formatPercentRaw } from "@/lib/format";
 import {
   mockKellyMetrics,
   mockVolatilityMetrics,
   mockChandelierExit,
   mockRiskSettings,
+  mockLiquidationInfo,
 } from "@/lib/mock-data";
+import type { KellyFraction } from "@/lib/types";
 
 export default function RiskScreen() {
   const colors = useColors();
   const [refreshing, setRefreshing] = useState(false);
-  const [useHalfKelly, setUseHalfKelly] = useState(mockRiskSettings.useHalfKelly);
+  const [kellyFraction, setKellyFraction] = useState<KellyFraction>(
+    mockRiskSettings.kellyFraction || "half"
+  );
+  const [leverage, setLeverage] = useState(mockRiskSettings.maxLeverage);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
@@ -29,6 +36,7 @@ export default function RiskScreen() {
   const kelly = mockKellyMetrics;
   const volatility = mockVolatilityMetrics;
   const chandelier = mockChandelierExit;
+  const liquidation = mockLiquidationInfo;
 
   // Calculate overall risk score
   const riskScore = Math.round(
@@ -37,6 +45,14 @@ export default function RiskScreen() {
       (volatility.positionAdjustment) * 0.3) *
       100
   );
+
+  // Determine risk level based on leverage and liquidation distance
+  const getRiskLevel = () => {
+    if (leverage > 50 || liquidation.distancePercent < 2) return "high";
+    if (leverage > 20 || liquidation.distancePercent < 5) return "moderate";
+    return "low";
+  };
+  const riskLevel = getRiskLevel();
 
   return (
     <ScreenContainer>
@@ -50,7 +66,7 @@ export default function RiskScreen() {
         <View className="px-4 pt-4 pb-2">
           <Text className="text-3xl font-bold text-foreground">Risk Management</Text>
           <Text className="text-sm text-muted mt-1">
-            Quantitative Risk Controls
+            High-Leverage Safety Engine
           </Text>
         </View>
 
@@ -60,8 +76,17 @@ export default function RiskScreen() {
             <View className="flex-row items-center justify-between mb-4">
               <Text className="text-sm text-muted">Overall Risk Score</Text>
               <View className="flex-row items-center gap-1">
-                <IconSymbol name="shield.checkered" size={16} color={colors.success} />
-                <Text className="text-sm text-success">Healthy</Text>
+                <IconSymbol 
+                  name="shield.checkered" 
+                  size={16} 
+                  color={riskLevel === "low" ? colors.success : riskLevel === "moderate" ? colors.warning : colors.error} 
+                />
+                <Text 
+                  style={{ color: riskLevel === "low" ? colors.success : riskLevel === "moderate" ? colors.warning : colors.error }}
+                  className="text-sm capitalize"
+                >
+                  {riskLevel} Risk
+                </Text>
               </View>
             </View>
 
@@ -90,33 +115,56 @@ export default function RiskScreen() {
             {/* Quick Stats */}
             <View className="flex-row gap-3">
               <View className="flex-1 p-3 bg-background rounded-xl">
-                <Text className="text-xs text-muted mb-1">Max Leverage</Text>
+                <Text className="text-xs text-muted mb-1">Current Leverage</Text>
                 <Text className="text-lg font-semibold text-foreground">
-                  {mockRiskSettings.maxLeverage}x
+                  {leverage}x
                 </Text>
               </View>
               <View className="flex-1 p-3 bg-background rounded-xl">
-                <Text className="text-xs text-muted mb-1">Vol Target</Text>
-                <Text className="text-lg font-semibold text-foreground">
-                  {formatPercentRaw(mockRiskSettings.targetVolatility)}
+                <Text className="text-xs text-muted mb-1">Liq. Distance</Text>
+                <Text 
+                  className="text-lg font-semibold"
+                  style={{ color: liquidation.distancePercent < 5 ? colors.error : colors.foreground }}
+                >
+                  {liquidation.distancePercent.toFixed(1)}%
                 </Text>
               </View>
               <View className="flex-1 p-3 bg-background rounded-xl">
-                <Text className="text-xs text-muted mb-1">ATR Mult</Text>
-                <Text className="text-lg font-semibold text-foreground">
-                  {mockRiskSettings.atrMultiplier}x
+                <Text className="text-xs text-muted mb-1">Kelly</Text>
+                <Text className="text-lg font-semibold text-foreground capitalize">
+                  {kellyFraction === "quarter" ? "¼" : kellyFraction === "half" ? "½" : "Full"}
                 </Text>
               </View>
             </View>
           </View>
         </View>
 
+        {/* Liquidation Distance */}
+        <View className="px-4 py-3">
+          <LiquidationCard
+            info={liquidation}
+            currentPrice={98432.50}
+            leverage={leverage}
+            side="long"
+          />
+        </View>
+
+        {/* Smart Leverage Selector */}
+        <View className="px-4 py-3">
+          <SmartLeverageCard
+            volatility={volatility}
+            currentLeverage={leverage}
+            onLeverageChange={setLeverage}
+          />
+        </View>
+
         {/* Kelly Criterion */}
         <View className="px-4 py-3">
           <KellyCard
             metrics={kelly}
-            useHalfKelly={useHalfKelly}
-            onToggleHalfKelly={setUseHalfKelly}
+            currentFraction={kellyFraction}
+            onFractionChange={setKellyFraction}
+            leverage={leverage}
           />
         </View>
 
@@ -163,6 +211,23 @@ export default function RiskScreen() {
           </View>
         </View>
 
+        {/* High Leverage Warning */}
+        {leverage > 20 && (
+          <View className="px-4 py-3">
+            <View className="bg-error/10 rounded-2xl p-4 border border-error/30">
+              <View className="flex-row items-center gap-2 mb-2">
+                <IconSymbol name="flame.fill" size={20} color={colors.error} />
+                <Text className="text-base font-semibold text-error">High Leverage Warning</Text>
+              </View>
+              <Text className="text-sm text-muted leading-5">
+                You are using {leverage}x leverage. At this level, a {(100 / leverage).toFixed(1)}% 
+                adverse price move will liquidate your position. Consider using Quarter Kelly 
+                position sizing and setting tight stop losses.
+              </Text>
+            </View>
+          </View>
+        )}
+
         {/* Risk Warning */}
         <View className="px-4 py-3">
           <View className="bg-warning/10 rounded-2xl p-4 border border-warning/30">
@@ -171,9 +236,9 @@ export default function RiskScreen() {
               <Text className="text-base font-semibold text-foreground">Risk Disclaimer</Text>
             </View>
             <Text className="text-sm text-muted leading-5">
-              Past performance does not guarantee future results. The Kelly Criterion and other
-              risk metrics are mathematical models that may not account for all market conditions.
-              Always use proper risk management and never invest more than you can afford to lose.
+              Leveraged trading carries significant risk of loss. The Kelly Criterion and volatility 
+              targeting are mathematical models that may not account for all market conditions. 
+              Never trade with funds you cannot afford to lose.
             </Text>
           </View>
         </View>

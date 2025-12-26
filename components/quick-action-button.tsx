@@ -10,6 +10,7 @@ interface QuickActionButtonProps {
   onPress?: () => void;
   disabled?: boolean;
   className?: string;
+  label?: string;
 }
 
 export function QuickActionButton({
@@ -17,6 +18,7 @@ export function QuickActionButton({
   onPress,
   disabled,
   className,
+  label,
 }: QuickActionButtonProps) {
   const colors = useColors();
   const isBuy = type === "buy";
@@ -45,7 +47,7 @@ export function QuickActionButton({
         size={20}
         color="#FFFFFF"
       />
-      <Text style={styles.text}>{isBuy ? "Buy" : "Sell"}</Text>
+      <Text style={styles.text}>{label || (isBuy ? "Buy" : "Sell")}</Text>
     </Pressable>
   );
 }

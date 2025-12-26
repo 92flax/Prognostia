@@ -5,11 +5,12 @@ import { ScreenContainer } from "@/components/screen-container";
 import { ForecastChart } from "@/components/forecast-chart";
 import { SentimentGauge } from "@/components/sentiment-gauge";
 import { NewsHeadline } from "@/components/news-headline";
+import { ExplainableAICard } from "@/components/explainable-ai-card";
 import { MetricCard } from "@/components/metric-card";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useColors } from "@/hooks/use-colors";
 import { formatTimeAgo, formatPercentRaw } from "@/lib/format";
-import { mockPriceForecast, mockSentimentData, mockAISignal } from "@/lib/mock-data";
+import { mockPriceForecast, mockSentimentData, mockAISignal, mockAIReasoning } from "@/lib/mock-data";
 
 export default function AIScreen() {
   const colors = useColors();
@@ -24,6 +25,7 @@ export default function AIScreen() {
   const forecast = mockPriceForecast;
   const sentiment = mockSentimentData;
   const signal = mockAISignal;
+  const reasoning = mockAIReasoning;
 
   return (
     <ScreenContainer>
@@ -90,6 +92,15 @@ export default function AIScreen() {
               </View>
             </View>
           </View>
+        </View>
+
+        {/* Explainable AI - Why This Signal? */}
+        <View className="px-4 py-3">
+          <ExplainableAICard
+            reasoning={reasoning}
+            direction={signal.direction}
+            confidence={signal.confidence}
+          />
         </View>
 
         {/* TimesFM Price Forecast */}
@@ -172,6 +183,10 @@ export default function AIScreen() {
               <View className="flex-row justify-between">
                 <Text className="text-sm text-muted">FinBERT Model</Text>
                 <Text className="text-sm text-foreground">ProsusAI/finbert</Text>
+              </View>
+              <View className="flex-row justify-between">
+                <Text className="text-sm text-muted">XAI Engine</Text>
+                <Text className="text-sm text-foreground">v2.0 (Explainable)</Text>
               </View>
               <View className="flex-row justify-between">
                 <Text className="text-sm text-muted">Last Training</Text>

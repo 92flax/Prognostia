@@ -48,6 +48,28 @@ const MAPPING = {
   "doc.text.fill": "description",
   "clock.fill": "schedule",
   "star.fill": "star",
+  // Trading mode icons
+  "play.circle.fill": "play-circle-filled",
+  "pause.circle.fill": "pause-circle-filled",
+  "bolt.fill": "flash-on",
+  "bolt.slash.fill": "flash-off",
+  "target": "gps-fixed",
+  "scope": "my-location",
+  // Risk icons
+  "gauge.high": "speed",
+  "gauge.low": "slow-motion-video",
+  "lock.fill": "lock",
+  "lock.open.fill": "lock-open",
+  "flame.fill": "local-fire-department",
+  "snowflake": "ac-unit",
+  // Exchange icons
+  "building.columns.fill": "account-balance",
+  "creditcard.fill": "credit-card",
+  "key.fill": "vpn-key",
+  // AI icons
+  "sparkles": "auto-awesome",
+  "lightbulb.fill": "lightbulb",
+  "wand.and.stars": "auto-fix-high",
 } as IconMapping;
 
 /**
