@@ -20,10 +20,6 @@ function createAuthContext(): { ctx: TrpcContext; clearedCookies: CookieCall[] }
     name: "Sample User",
     loginMethod: "manus",
     role: "user",
-    // Signal preferences
-    preferredSafetyFactor: "2.0",
-    preferredRiskReward: "2.0",
-    maxLeverageLimit: 20,
     // Timestamps
     createdAt: new Date(),
     updatedAt: new Date(),

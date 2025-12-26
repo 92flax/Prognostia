@@ -76,6 +76,13 @@ const MAPPING = {
   "arrow.clockwise": "refresh",
   "paperplane.fill": "send",
   "chevron.left.forwardslash.chevron.right": "code",
+  // Direction icons
+  "arrow.up": "arrow-upward",
+  "arrow.down": "arrow-downward",
+  "checkmark": "check",
+  // History icons
+  "clock.arrow.circlepath": "history",
+  "list.bullet": "list",
 } as IconMapping;
 
 /**

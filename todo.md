@@ -99,3 +99,41 @@
 - [x] Remove Bitget/Alpaca API integration
 - [x] Remove Paper Trading mode (no longer needed)
 - [x] Simplify to public market data only
+
+
+## Automated Trading Bot - Hybrid Mode
+
+### Database Schema
+- [x] Add user_settings table (bitget credentials, auto_trade_enabled)
+- [x] Expand signals table with executed field
+- [x] Add trades table (mode, asset, side, size, entry, exit, pnl, status)
+- [x] Add paper_wallet table for simulation balance
+
+### Trading Engine (lib/trading-engine.ts)
+- [x] Implement Bitget CCXT connection for Futures
+- [x] Handle Isolated Margin and Hedge Mode settings
+- [x] Create signal generation with XAI explanations
+- [x] Implement executeSignal() router (Live vs Paper)
+- [x] Add risk checks (balance vs position size)
+
+### Dashboard UI
+- [x] Add horizontal Asset Selector (BTC, ETH, SOL, etc.)
+- [x] Update Signal Card with full trade setup
+- [x] Add Auto-Trading toggle switch
+- [x] Show current mode indicator (LIVE/SIMULATION)
+
+### Settings Screen
+- [x] Add Bitget API credentials form (Key, Secret, Passphrase)
+- [x] Show connection status (Connected/Simulation Mode)
+- [x] Add connection test button
+
+### Portfolio Screen
+- [x] Restore Portfolio tab in navigation
+- [x] Show real positions from Bitget (Live mode)
+- [x] Show paper positions (Simulation mode)
+- [x] Display trade history with P&Lsitions
+
+#### Automation Logic
+- [x] Implement auto-trade trigger on high confidence signals
+- [x] Add confidence threshold setting (default 75%)
+- [x] Route execution through Trading Engine (Live/Paper)revent live trading without valid API connection

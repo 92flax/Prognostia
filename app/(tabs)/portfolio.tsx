@@ -1,136 +1,238 @@
-import { ScrollView, Text, View, RefreshControl, Pressable, StyleSheet } from "react-native";
+import { ScrollView, Text, View, RefreshControl, Pressable, StyleSheet, Alert } from "react-native";
 import { useState, useCallback } from "react";
+import * as Haptics from "expo-haptics";
+import { Platform } from "react-native";
 
 import { ScreenContainer } from "@/components/screen-container";
-import { HoldingItem } from "@/components/holding-item";
-import { AllocationChart } from "@/components/allocation-chart";
-import { TradeItem } from "@/components/trade-item";
+import { PositionCard } from "@/components/position-card";
+import { TradeHistoryItem } from "@/components/trade-history-item";
 import { MetricCard } from "@/components/metric-card";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useColors } from "@/hooks/use-colors";
 import { formatCurrency, formatPercent } from "@/lib/format";
 import {
-  mockPortfolioSummary,
-  mockHoldings,
-  mockTrades,
-} from "@/lib/mock-data";
+  MOCK_TRADE_HISTORY,
+  MOCK_PAPER_WALLET,
+  MockTrade,
+} from "@/lib/mock-trading-data";
 
-type TabType = "holdings" | "history";
+type TabType = "positions" | "history";
 
+/**
+ * Portfolio Screen - View positions and trade history
+ * 
+ * Features:
+ * - Paper wallet balance overview
+ * - Open positions list
+ * - Trade history
+ * - Performance metrics
+ */
 export default function PortfolioScreen() {
   const colors = useColors();
-  const [refreshing, setRefreshing] = useState(false);
-  const [activeTab, setActiveTab] = useState<TabType>("holdings");
+  
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [activeTab, setActiveTab] = useState<TabType>("positions");
+  const [tradingMode] = useState<"PAPER" | "LIVE">("PAPER");
+  const [wallet, setWallet] = useState(MOCK_PAPER_WALLET);
+  const [trades, setTrades] = useState<MockTrade[]>(MOCK_TRADE_HISTORY);
 
-  const onRefresh = useCallback(() => {
-    setRefreshing(true);
-    setTimeout(() => setRefreshing(false), 1500);
+  // Get open and closed positions
+  const openPositions = trades.filter(t => t.status === "OPEN");
+  const closedTrades = trades.filter(t => t.status === "CLOSED");
+
+  // Handle refresh
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    setIsRefreshing(false);
   }, []);
 
-  const portfolio = mockPortfolioSummary;
-  const holdings = mockHoldings;
-  const trades = mockTrades;
+  // Handle close position
+  const handleClosePosition = (tradeId: string) => {
+    Alert.alert(
+      "Close Position",
+      "Are you sure you want to close this position?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Close",
+          style: "destructive",
+          onPress: () => {
+            if (Platform.OS !== "web") {
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            }
+            // Simulate closing position
+            setTrades(prev =>
+              prev.map(t =>
+                t.id === tradeId
+                  ? {
+                      ...t,
+                      status: "CLOSED" as const,
+                      exitPrice: t.entryPrice * (t.direction === "LONG" ? 1.02 : 0.98),
+                      pnl: t.size * t.entryPrice * 0.02 * t.leverage,
+                      pnlPercent: 2 * t.leverage,
+                      closedAt: new Date(),
+                    }
+                  : t
+              )
+            );
+          },
+        },
+      ]
+    );
+  };
+
+  // Calculate current price for open positions (mock)
+  const getCurrentPrice = (trade: MockTrade) => {
+    const change = trade.direction === "LONG" ? 1.015 : 0.985;
+    return trade.entryPrice * change;
+  };
+
+  // Calculate unrealized P&L
+  const getUnrealizedPnl = (trade: MockTrade) => {
+    const currentPrice = getCurrentPrice(trade);
+    const priceDiff = trade.direction === "LONG"
+      ? currentPrice - trade.entryPrice
+      : trade.entryPrice - currentPrice;
+    return priceDiff * trade.size * trade.leverage;
+  };
+
+  const getPnlPercent = (trade: MockTrade) => {
+    const currentPrice = getCurrentPrice(trade);
+    const priceDiff = trade.direction === "LONG"
+      ? (currentPrice - trade.entryPrice) / trade.entryPrice
+      : (trade.entryPrice - currentPrice) / trade.entryPrice;
+    return priceDiff * 100 * trade.leverage;
+  };
+
+  // Calculate total unrealized P&L
+  const totalUnrealizedPnl = openPositions.reduce((sum, t) => sum + getUnrealizedPnl(t), 0);
+  const winRate = wallet.totalTrades > 0
+    ? ((wallet.winningTrades / wallet.totalTrades) * 100)
+    : 0;
 
   return (
     <ScreenContainer>
       <ScrollView
-        contentContainerStyle={{ paddingBottom: 100 }}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={handleRefresh}
+            tintColor={colors.primary}
+          />
         }
       >
         {/* Header */}
-        <View className="px-4 pt-4 pb-2">
-          <Text className="text-3xl font-bold text-foreground">Portfolio</Text>
-          <Text className="text-sm text-muted mt-1">Your Holdings & History</Text>
+        <View style={styles.header}>
+          <View>
+            <Text style={[styles.title, { color: colors.foreground }]}>
+              Portfolio
+            </Text>
+            <Text style={[styles.subtitle, { color: colors.muted }]}>
+              Positions & Trade History
+            </Text>
+          </View>
+          <View
+            style={[
+              styles.modeBadge,
+              { backgroundColor: tradingMode === "PAPER" ? colors.success + "20" : colors.error + "20" },
+            ]}
+          >
+            <Text
+              style={[
+                styles.modeText,
+                { color: tradingMode === "PAPER" ? colors.success : colors.error },
+              ]}
+            >
+              {tradingMode}
+            </Text>
+          </View>
         </View>
 
-        {/* Portfolio Value */}
-        <View className="px-4 py-3">
-          <View className="bg-surface rounded-2xl p-5 border border-border">
-            <Text className="text-sm text-muted mb-2">Total Value</Text>
-            <Text className="text-4xl font-bold text-foreground mb-2">
-              {formatCurrency(portfolio.totalValue)}
-            </Text>
-            <View className="flex-row items-center gap-4">
-              <View className="flex-row items-center">
-                <IconSymbol
-                  name={portfolio.totalReturn >= 0 ? "chevron.up" : "chevron.down"}
-                  size={16}
-                  color={portfolio.totalReturn >= 0 ? colors.success : colors.error}
-                />
-                <Text
-                  style={{ color: portfolio.totalReturn >= 0 ? colors.success : colors.error }}
-                  className="text-base font-semibold"
-                >
-                  {formatCurrency(Math.abs(portfolio.totalReturn))}
-                </Text>
-              </View>
-              <Text
-                style={{ color: portfolio.totalReturnPercent >= 0 ? colors.success : colors.error }}
-                className="text-sm"
-              >
-                {formatPercent(portfolio.totalReturnPercent)} all time
+        {/* Balance Overview */}
+        <View style={styles.section}>
+          <View
+            style={[
+              styles.balanceCard,
+              { backgroundColor: colors.surface, borderColor: colors.border },
+            ]}
+          >
+            <View style={styles.balanceHeader}>
+              <Text style={[styles.balanceLabel, { color: colors.muted }]}>
+                {tradingMode === "PAPER" ? "Paper Balance" : "Account Balance"}
+              </Text>
+              <Text style={[styles.balanceValue, { color: colors.foreground }]}>
+                {formatCurrency(wallet.balance)}
               </Text>
             </View>
+
+            {openPositions.length > 0 && (
+              <View
+                style={[
+                  styles.unrealizedPnl,
+                  { backgroundColor: totalUnrealizedPnl >= 0 ? colors.success + "10" : colors.error + "10" },
+                ]}
+              >
+                <Text style={[styles.unrealizedLabel, { color: colors.muted }]}>
+                  Unrealized P&L
+                </Text>
+                <Text
+                  style={[
+                    styles.unrealizedValue,
+                    { color: totalUnrealizedPnl >= 0 ? colors.success : colors.error },
+                  ]}
+                >
+                  {totalUnrealizedPnl >= 0 ? "+" : ""}{formatCurrency(totalUnrealizedPnl)}
+                </Text>
+              </View>
+            )}
           </View>
         </View>
 
         {/* Performance Metrics */}
-        <View className="px-4 py-2">
-          <View className="flex-row gap-3">
+        <View style={styles.section}>
+          <View style={styles.metricsRow}>
             <MetricCard
-              title="Daily P&L"
-              value={formatCurrency(portfolio.dailyPnL)}
-              trendValue={formatPercent(portfolio.dailyPnLPercent)}
-              trend={portfolio.dailyPnL >= 0 ? "up" : "down"}
+              title="Total P&L"
+              value={formatCurrency(wallet.totalPnl)}
+              trend={wallet.totalPnl >= 0 ? "up" : "down"}
               className="flex-1"
             />
             <MetricCard
-              title="Positions"
-              value={holdings.length.toString()}
-              subtitle="assets"
+              title="Win Rate"
+              value={formatPercent(winRate)}
+              subtitle={`${wallet.winningTrades}/${wallet.totalTrades} trades`}
               className="flex-1"
             />
-          </View>
-        </View>
-
-        {/* Allocation Chart */}
-        <View className="px-4 py-3">
-          <Text className="text-lg font-semibold text-foreground mb-3">
-            Asset Allocation
-          </Text>
-          <View className="bg-surface rounded-2xl p-4 border border-border">
-            <AllocationChart holdings={holdings} size={180} />
           </View>
         </View>
 
         {/* Tab Selector */}
-        <View className="px-4 py-3">
-          <View className="flex-row bg-surface rounded-xl p-1 border border-border">
+        <View style={styles.section}>
+          <View style={[styles.tabContainer, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <Pressable
-              onPress={() => setActiveTab("holdings")}
+              onPress={() => setActiveTab("positions")}
               style={({ pressed }) => [
                 styles.tab,
-                activeTab === "holdings" && styles.activeTab,
-                activeTab === "holdings" && { backgroundColor: colors.primary },
+                activeTab === "positions" && { backgroundColor: colors.primary },
                 pressed && styles.pressed,
               ]}
             >
               <Text
                 style={[
                   styles.tabText,
-                  { color: activeTab === "holdings" ? "#FFFFFF" : colors.muted },
+                  { color: activeTab === "positions" ? "#FFFFFF" : colors.muted },
                 ]}
               >
-                Holdings
+                Open Positions ({openPositions.length})
               </Text>
             </Pressable>
             <Pressable
               onPress={() => setActiveTab("history")}
               style={({ pressed }) => [
                 styles.tab,
-                activeTab === "history" && styles.activeTab,
                 activeTab === "history" && { backgroundColor: colors.primary },
                 pressed && styles.pressed,
               ]}
@@ -141,93 +243,207 @@ export default function PortfolioScreen() {
                   { color: activeTab === "history" ? "#FFFFFF" : colors.muted },
                 ]}
               >
-                Trade History
+                History ({closedTrades.length})
               </Text>
             </Pressable>
           </View>
         </View>
 
-        {/* Holdings List */}
-        {activeTab === "holdings" && (
-          <View className="px-4 py-2">
-            <View className="bg-surface rounded-2xl px-4 border border-border">
-              {holdings.map((holding, index) => (
-                <HoldingItem
-                  key={holding.id}
-                  holding={holding}
-                  className={index === holdings.length - 1 ? "border-b-0" : ""}
-                />
-              ))}
-            </View>
+        {/* Open Positions */}
+        {activeTab === "positions" && (
+          <View style={styles.section}>
+            {openPositions.length > 0 ? (
+              <View style={styles.positionsList}>
+                {openPositions.map(trade => (
+                  <PositionCard
+                    key={trade.id}
+                    asset={trade.asset}
+                    direction={trade.direction}
+                    entryPrice={trade.entryPrice}
+                    currentPrice={getCurrentPrice(trade)}
+                    size={trade.size}
+                    leverage={trade.leverage}
+                    unrealizedPnl={getUnrealizedPnl(trade)}
+                    pnlPercent={getPnlPercent(trade)}
+                    mode={trade.mode}
+                    onClose={() => handleClosePosition(trade.id)}
+                  />
+                ))}
+              </View>
+            ) : (
+              <View
+                style={[
+                  styles.emptyState,
+                  { backgroundColor: colors.surface, borderColor: colors.border },
+                ]}
+              >
+                <IconSymbol name="briefcase.fill" size={32} color={colors.muted} />
+                <Text style={[styles.emptyText, { color: colors.muted }]}>
+                  No open positions
+                </Text>
+                <Text style={[styles.emptySubtext, { color: colors.muted }]}>
+                  Execute a signal to open a position
+                </Text>
+              </View>
+            )}
           </View>
         )}
 
         {/* Trade History */}
         {activeTab === "history" && (
-          <View className="px-4 py-2">
-            <View className="bg-surface rounded-2xl px-4 border border-border">
-              {trades.map((trade, index) => (
-                <TradeItem
-                  key={trade.id}
-                  trade={trade}
-                  className={index === trades.length - 1 ? "border-b-0" : ""}
-                />
-              ))}
-            </View>
+          <View style={styles.section}>
+            {closedTrades.length > 0 ? (
+              <View style={styles.historyList}>
+                {closedTrades.map(trade => (
+                  <TradeHistoryItem
+                    key={trade.id}
+                    asset={trade.asset}
+                    direction={trade.direction}
+                    entryPrice={trade.entryPrice}
+                    exitPrice={trade.exitPrice!}
+                    pnl={trade.pnl!}
+                    pnlPercent={trade.pnlPercent!}
+                    leverage={trade.leverage}
+                    mode={trade.mode}
+                    closedAt={trade.closedAt!}
+                  />
+                ))}
+              </View>
+            ) : (
+              <View
+                style={[
+                  styles.emptyState,
+                  { backgroundColor: colors.surface, borderColor: colors.border },
+                ]}
+              >
+                <IconSymbol name="clock.arrow.circlepath" size={32} color={colors.muted} />
+                <Text style={[styles.emptyText, { color: colors.muted }]}>
+                  No trade history
+                </Text>
+                <Text style={[styles.emptySubtext, { color: colors.muted }]}>
+                  Closed trades will appear here
+                </Text>
+              </View>
+            )}
           </View>
         )}
 
-        {/* Performance Summary */}
-        <View className="px-4 py-3">
-          <Text className="text-lg font-semibold text-foreground mb-3">
-            Performance Summary
-          </Text>
-          <View className="flex-row flex-wrap gap-3">
-            <MetricCard
-              title="Win Rate"
-              value="62%"
-              trend="up"
-              className="flex-1 min-w-[45%]"
-            />
-            <MetricCard
-              title="Avg Trade"
-              value={formatCurrency(1250)}
-              className="flex-1 min-w-[45%]"
-            />
-            <MetricCard
-              title="Best Trade"
-              value={formatCurrency(8500)}
-              trend="up"
-              className="flex-1 min-w-[45%]"
-            />
-            <MetricCard
-              title="Worst Trade"
-              value={formatCurrency(-2100)}
-              trend="down"
-              className="flex-1 min-w-[45%]"
-            />
-          </View>
-        </View>
+        {/* Bottom spacing */}
+        <View style={styles.bottomSpacer} />
       </ScrollView>
     </ScreenContainer>
   );
 }
 
 const styles = StyleSheet.create({
+  scrollContent: {
+    paddingBottom: 20,
+  },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 8,
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: "800",
+  },
+  subtitle: {
+    fontSize: 14,
+    marginTop: 2,
+  },
+  modeBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  modeText: {
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  section: {
+    paddingHorizontal: 16,
+    marginTop: 16,
+  },
+  balanceCard: {
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 20,
+  },
+  balanceHeader: {
+    marginBottom: 4,
+  },
+  balanceLabel: {
+    fontSize: 13,
+    marginBottom: 4,
+  },
+  balanceValue: {
+    fontSize: 32,
+    fontWeight: "800",
+  },
+  unrealizedPnl: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 16,
+    padding: 12,
+    borderRadius: 12,
+  },
+  unrealizedLabel: {
+    fontSize: 13,
+  },
+  unrealizedValue: {
+    fontSize: 18,
+    fontWeight: "700",
+  },
+  metricsRow: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  tabContainer: {
+    flexDirection: "row",
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 4,
+  },
   tab: {
     flex: 1,
     paddingVertical: 10,
     borderRadius: 8,
     alignItems: "center",
   },
-  activeTab: {
-    // backgroundColor set dynamically
-  },
   tabText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "600",
   },
   pressed: {
     opacity: 0.8,
+  },
+  positionsList: {
+    gap: 12,
+  },
+  historyList: {
+    gap: 10,
+  },
+  emptyState: {
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 40,
+    borderRadius: 16,
+    borderWidth: 1,
+    gap: 8,
+  },
+  emptyText: {
+    fontSize: 15,
+    fontWeight: "600",
+  },
+  emptySubtext: {
+    fontSize: 13,
+  },
+  bottomSpacer: {
+    height: 40,
   },
 });

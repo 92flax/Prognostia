@@ -31,8 +31,15 @@ export default function TabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: "Signals",
+          title: "Dashboard",
           tabBarIcon: ({ color }) => <IconSymbol size={26} name="bolt.fill" color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="portfolio"
+        options={{
+          title: "Portfolio",
+          tabBarIcon: ({ color }) => <IconSymbol size={26} name="briefcase.fill" color={color} />,
         }}
       />
       <Tabs.Screen
@@ -58,12 +65,6 @@ export default function TabLayout() {
       />
       <Tabs.Screen
         name="risk"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="portfolio"
         options={{
           href: null,
         }}
