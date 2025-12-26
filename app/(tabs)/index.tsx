@@ -8,6 +8,8 @@ import { AssetSelector } from "@/components/asset-selector";
 import { AutoTradeToggle } from "@/components/auto-trade-toggle";
 import { TradingSignalCard } from "@/components/trading-signal-card";
 import { ModeIndicator } from "@/components/mode-indicator";
+import { WalletBalanceCard } from "@/components/wallet-balance-card";
+import { TradeExecutionModal } from "@/components/trade-execution-modal";
 import { useColors } from "@/hooks/use-colors";
 import { SignalSetup } from "@/lib/signal-engine";
 import {
@@ -20,10 +22,12 @@ import {
  * Dashboard Screen - Main trading interface
  * 
  * Features:
+ * - Wallet balance display (available/locked)
  * - Asset selector (horizontal scroll)
  * - Mode indicator (PAPER/LIVE)
  * - Auto-trade toggle
  * - Active signal card with full trade setup
+ * - Trade execution modal with position size selector
  */
 export default function DashboardScreen() {
   const colors = useColors();
@@ -36,7 +40,15 @@ export default function DashboardScreen() {
   const [currentSignal, setCurrentSignal] = useState<SignalSetup | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isExecuting, setIsExecuting] = useState(false);
-  const [balance, setBalance] = useState(MOCK_PAPER_WALLET.balance);
+  const [isLoadingBalance, setIsLoadingBalance] = useState(false);
+  
+  // Wallet state
+  const [totalBalance, setTotalBalance] = useState(MOCK_PAPER_WALLET.balance);
+  const [availableBalance, setAvailableBalance] = useState(MOCK_PAPER_WALLET.balance);
+  const [lockedBalance, setLockedBalance] = useState(0);
+  
+  // Trade execution modal state
+  const [showTradeModal, setShowTradeModal] = useState(false);
 
   // Generate initial signal
   useEffect(() => {
@@ -62,6 +74,7 @@ export default function DashboardScreen() {
   // Handle refresh
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
+    setIsLoadingBalance(true);
     
     // Simulate API call delay
     await new Promise(resolve => setTimeout(resolve, 1000));
@@ -71,10 +84,17 @@ export default function DashboardScreen() {
     setCurrentSignal(signal);
     
     setIsRefreshing(false);
+    setIsLoadingBalance(false);
   }, [selectedAsset]);
 
-  // Handle trade execution
-  const handleExecute = async () => {
+  // Handle opening trade modal
+  const handleOpenTradeModal = () => {
+    if (!currentSignal) return;
+    setShowTradeModal(true);
+  };
+
+  // Handle trade execution with position size
+  const handleExecuteTrade = async (sizeUsdt: number) => {
     if (!currentSignal) return;
     
     setIsExecuting(true);
@@ -86,11 +106,12 @@ export default function DashboardScreen() {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     }
     
-    // Update balance (simulate margin deduction)
-    const margin = (currentSignal.entryPrice * 0.01) / currentSignal.leverageRecommendation;
-    setBalance(prev => prev - margin);
+    // Update balances
+    setAvailableBalance(prev => prev - sizeUsdt);
+    setLockedBalance(prev => prev + sizeUsdt);
     
     setIsExecuting(false);
+    setShowTradeModal(false);
     
     // Generate new signal after execution
     const newSignal = generateMockSignal(selectedAsset);
@@ -125,7 +146,18 @@ export default function DashboardScreen() {
           <ModeIndicator
             mode={tradingMode}
             isConnected={isConnected}
-            balance={balance}
+            balance={totalBalance}
+          />
+        </View>
+
+        {/* Wallet Balance Card */}
+        <View style={styles.section}>
+          <WalletBalanceCard
+            totalBalance={totalBalance}
+            availableBalance={availableBalance}
+            lockedBalance={lockedBalance}
+            isLive={tradingMode === "LIVE"}
+            isLoading={isLoadingBalance}
           />
         </View>
 
@@ -161,7 +193,7 @@ export default function DashboardScreen() {
               signal={currentSignal}
               mode={tradingMode}
               autoTradeEnabled={autoTradeEnabled}
-              onExecute={handleExecute}
+              onExecute={handleOpenTradeModal}
               isExecuting={isExecuting}
             />
           ) : (
@@ -195,6 +227,19 @@ export default function DashboardScreen() {
         {/* Bottom spacing for tab bar */}
         <View style={styles.bottomSpacer} />
       </ScrollView>
+
+      {/* Trade Execution Modal */}
+      {currentSignal && (
+        <TradeExecutionModal
+          visible={showTradeModal}
+          onClose={() => setShowTradeModal(false)}
+          onConfirm={handleExecuteTrade}
+          signal={currentSignal}
+          availableBalance={availableBalance}
+          isLive={tradingMode === "LIVE"}
+          isExecuting={isExecuting}
+        />
+      )}
     </ScreenContainer>
   );
 }

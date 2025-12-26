@@ -137,3 +137,18 @@
 - [x] Implement auto-trade trigger on high confidence signals
 - [x] Add confidence threshold setting (default 75%)
 - [x] Route execution through Trading Engine (Live/Paper)revent live trading without valid API connection
+
+
+## Wallet Balance & Position Sizing
+
+### Wallet Balance Display
+- [x] Show Bitget Futures wallet balance on Dashboard
+- [x] Display available margin for trading
+- [x] Update balance after trade execution
+
+### Position Size Selector
+- [x] Create position size input component
+- [x] Support percentage of wallet (25%, 50%, 75%, 100%)
+- [x] Support fixed USDT amount input
+- [x] Show calculated position size based on leverage
+- [x] Add trade execution modal with size selection

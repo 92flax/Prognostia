@@ -83,6 +83,9 @@ const MAPPING = {
   // History icons
   "clock.arrow.circlepath": "history",
   "list.bullet": "list",
+  // Modal icons
+  "xmark": "close",
+  "checkmark.shield.fill": "verified-user",
 } as IconMapping;
 
 /**
