@@ -182,3 +182,44 @@
 - [x] Show past real equity curve (actual balance history)
 - [x] Show projected future path (dotted line with confidence bands)
 - [x] Display performance stats (win rate, profit factor, expectancy)
+
+
+## Deep Refactoring - Production-Ready Trading Platform
+
+### MODUL 1: Deterministisches State Management
+- [x] Replace useState with useReducer in auto-trade-context.tsx
+- [x] Define TradeState interface (wallet, positions, history, botStatus, activeTimeframe)
+- [x] Implement tradeReducer with atomic EXECUTE_TRADE and CLOSE_POSITION actions
+- [x] Create useLivePnL selector with memoized PnL calculation
+- [x] Implement UPDATE_MARK_PRICES action for high-frequency updates
+
+### MODUL 2: Quantitative Signal Engine
+- [x] Implement calculateHurstExponent with R/S Analysis
+- [x] Add Regime detection (TRENDING vs MEAN_REVERSION)
+- [x] Implement Ornstein-Uhlenbeck process with MLE parameter estimation
+- [x] Add OU-based signal logic (Long when Price < μ - 2σ, Short when Price > μ + 2σ)
+- [x] Implement Square Root of Time volatility scaling with TIMEFRAME_SCALERS
+
+### MODUL 3: FSM Bot-Steuerung
+- [x] Integrate botStatus FSM into Dashboard
+- [x] Remove local boolean flags (isBotActivated)
+- [x] Implement strict IDLE → SIGNAL_LOCKED transition
+- [x] Add COOLDOWN state with setTimeout (10 seconds)
+- [x] Eliminate infinite execution loop
+
+### MODUL 4: Risk Engine (Optimal f & Zero Ruin)
+- [x] Create lib/risk-engine.ts
+- [x] Implement calculateOptimalPositionSize with Ralph Vinces Optimal f
+- [x] Add Risk of Ruin (RoR) calculation
+- [x] Implement Zero Ruin constraint (RoR < 0.01%)
+- [x] Return safePositionSize to execution engine### MODUL 5: UI Hardening
+- [x] Fix Android 15 edge-to-edge layout in trade-execution-modal.tsx
+- [x] Add useSafeAreaInsets with dynamic padding
+- [x] Implement hydration gating (isHydrated state)nction
+- [ ] Add Forex (EURUSD) and Commodities (GOLD) assets
+- [ ] Implement Hydration Gating with skeleton loader
+
+### MODUL 6: Backend Integration
+- [x] Extend signals table with regime and model_params columns
+- [x] Create tRPC endpoints for signals, trades, stats, balance history
+- [x] Connect signal engine to historical data endpoint

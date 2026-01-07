@@ -1,11 +1,11 @@
-import { useState } from "react";
-import { View, Text, Modal, Pressable, StyleSheet, ScrollView } from "react-native";
+import { useState, useEffect } from "react";
+import { View, Text, Modal, Pressable, StyleSheet, ScrollView, Platform } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/use-colors";
 import { PositionSizeSelector } from "./position-size-selector";
 import { formatCurrency } from "@/lib/format";
 import { IconSymbol } from "./ui/icon-symbol";
 import * as Haptics from "expo-haptics";
-import { Platform } from "react-native";
 import type { SignalSetup } from "@/lib/signal-engine";
 
 interface TradeExecutionModalProps {
@@ -35,7 +35,21 @@ export function TradeExecutionModal({
   isExecuting = false,
 }: TradeExecutionModalProps) {
   const colors = useColors();
+  const insets = useSafeAreaInsets();
   const [positionSize, setPositionSize] = useState(0);
+  const [isHydrated, setIsHydrated] = useState(false);
+
+  // Hydration gating - prevent flash of unstyled content
+  useEffect(() => {
+    setIsHydrated(true);
+  }, []);
+
+  // Reset position size when modal opens
+  useEffect(() => {
+    if (visible) {
+      setPositionSize(0);
+    }
+  }, [visible]);
 
   const isLong = signal.direction === "LONG";
   const directionColor = isLong ? colors.success : colors.error;
@@ -46,6 +60,13 @@ export function TradeExecutionModal({
   const rewardAmount = positionSize * (Math.abs(signal.takeProfitPrice - signal.entryPrice) / signal.entryPrice);
 
   const canExecute = positionSize > 0 && positionSize <= availableBalance && !isExecuting;
+
+  // Android 15 edge-to-edge: Calculate dynamic bottom padding
+  const bottomPadding = Platform.select({
+    android: Math.max(insets.bottom, 24), // At least 24px on Android 15
+    ios: Math.max(insets.bottom, 16),
+    default: 16,
+  });
 
   const handleConfirm = () => {
     if (!canExecute) return;
@@ -61,16 +82,28 @@ export function TradeExecutionModal({
     onClose();
   };
 
+  // Don't render until hydrated to prevent layout flash
+  if (!isHydrated) {
+    return null;
+  }
+
   return (
     <Modal
       visible={visible}
       animationType="slide"
       transparent={true}
       onRequestClose={handleClose}
+      statusBarTranslucent={true} // Android 15 edge-to-edge
     >
       <View style={styles.overlay}>
         <View 
-          style={[styles.modalContainer, { backgroundColor: colors.background }]}
+          style={[
+            styles.modalContainer, 
+            { 
+              backgroundColor: colors.background,
+              paddingBottom: bottomPadding, // Dynamic safe area padding
+            }
+          ]}
         >
           {/* Header */}
           <View className="flex-row items-center justify-between p-4 border-b border-border">
@@ -103,7 +136,11 @@ export function TradeExecutionModal({
             </Pressable>
           </View>
 
-          <ScrollView className="flex-1 p-4">
+          <ScrollView 
+            className="flex-1 p-4"
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
             {/* Trade Mode Warning */}
             <View 
               className="flex-row items-center gap-2 p-3 rounded-xl mb-4"
@@ -190,8 +227,11 @@ export function TradeExecutionModal({
             )}
           </ScrollView>
 
-          {/* Footer Actions */}
-          <View className="p-4 border-t border-border">
+          {/* Footer Actions - with safe area padding */}
+          <View 
+            className="p-4 border-t border-border"
+            style={{ paddingBottom: 16 }} // Additional padding above safe area
+          >
             <View className="flex-row gap-3">
               <Pressable
                 onPress={handleClose}

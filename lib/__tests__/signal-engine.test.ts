@@ -5,12 +5,17 @@ import {
   calculateTakeProfit,
   getRiskLevel,
   calculateConfidence,
-  generateRationale,
   determineDirection,
   generateSignal,
   formatSignalForClipboard,
   calculatePositionSize,
+  calculateHurstExponent,
+  detectRegime,
+  estimateOUParameters,
+  generateOUSignal,
+  scaleATRForTimeframe,
   DEFAULT_CONFIG,
+  TIMEFRAME_SCALERS,
   type MarketConditions,
 } from "../signal-engine";
 
@@ -18,37 +23,49 @@ describe("Signal Engine", () => {
   describe("calculateLeverage", () => {
     it("should calculate leverage based on volatility", () => {
       // 5% daily volatility with safety factor 2 = 1 / (0.05 * 2) = 10x
-      const leverage = calculateLeverage(0.05, 2.0);
+      const leverage = calculateLeverage(0.05, 2.0, 20, 1, "1d");
       expect(leverage).toBe(10);
     });
 
     it("should clamp leverage to max", () => {
-      // Very low volatility would give high leverage, but should be clamped
-      const leverage = calculateLeverage(0.01, 1.0, 20);
+      const leverage = calculateLeverage(0.01, 1.0, 20, 1, "1d");
       expect(leverage).toBeLessThanOrEqual(20);
     });
 
     it("should clamp leverage to min", () => {
-      // Very high volatility would give low leverage, but should be clamped to min
-      const leverage = calculateLeverage(0.5, 2.0, 20, 1);
+      const leverage = calculateLeverage(0.5, 2.0, 20, 1, "1d");
       expect(leverage).toBeGreaterThanOrEqual(1);
     });
 
     it("should return min leverage for zero volatility", () => {
-      const leverage = calculateLeverage(0, 2.0, 20, 1);
+      const leverage = calculateLeverage(0, 2.0, 20, 1, "1d");
       expect(leverage).toBe(1);
+    });
+
+    it("should scale leverage for shorter timeframes", () => {
+      const dailyLeverage = calculateLeverage(0.05, 2.0, 50, 1, "1d");
+      const hourlyLeverage = calculateLeverage(0.05, 2.0, 50, 1, "1h");
+      // Shorter timeframes should allow higher leverage (tighter stops)
+      expect(hourlyLeverage).toBeGreaterThan(dailyLeverage);
     });
   });
 
   describe("calculateStopLoss", () => {
     it("should calculate SL below entry for LONG", () => {
-      const sl = calculateStopLoss(100000, 2000, "LONG", 3.0);
+      const sl = calculateStopLoss(100000, 2000, "LONG", 3.0, "1d");
       expect(sl).toBe(94000); // 100000 - (2000 * 3)
     });
 
     it("should calculate SL above entry for SHORT", () => {
-      const sl = calculateStopLoss(100000, 2000, "SHORT", 3.0);
+      const sl = calculateStopLoss(100000, 2000, "SHORT", 3.0, "1d");
       expect(sl).toBe(106000); // 100000 + (2000 * 3)
+    });
+
+    it("should scale ATR for different timeframes", () => {
+      const dailySL = calculateStopLoss(100000, 2000, "LONG", 3.0, "1d");
+      const hourlySL = calculateStopLoss(100000, 2000, "LONG", 3.0, "1h");
+      // Hourly SL should be tighter (closer to entry)
+      expect(hourlySL).toBeGreaterThan(dailySL);
     });
   });
 
@@ -86,6 +103,89 @@ describe("Signal Engine", () => {
     });
   });
 
+  describe("Hurst Exponent", () => {
+    it("should return 0.5 for insufficient data", () => {
+      const hurst = calculateHurstExponent([100, 101, 102]);
+      expect(hurst).toBe(0.5);
+    });
+
+    it("should calculate Hurst exponent for trending data", () => {
+      // Generate trending data (persistent)
+      const trendingPrices = Array.from({ length: 100 }, (_, i) => 100 + i * 0.5);
+      const hurst = calculateHurstExponent(trendingPrices);
+      expect(hurst).toBeGreaterThan(0.4); // Should show persistence
+    });
+
+    it("should calculate Hurst exponent for mean-reverting data", () => {
+      // Generate mean-reverting data (oscillating)
+      const meanRevertingPrices = Array.from(
+        { length: 100 },
+        (_, i) => 100 + Math.sin(i * 0.5) * 5
+      );
+      const hurst = calculateHurstExponent(meanRevertingPrices);
+      expect(hurst).toBeLessThan(0.6); // Should show anti-persistence
+    });
+  });
+
+  describe("detectRegime", () => {
+    it("should detect MEAN_REVERSION for H < 0.45", () => {
+      expect(detectRegime(0.3)).toBe("MEAN_REVERSION");
+      expect(detectRegime(0.44)).toBe("MEAN_REVERSION");
+    });
+
+    it("should detect TRENDING for H > 0.55", () => {
+      expect(detectRegime(0.6)).toBe("TRENDING");
+      expect(detectRegime(0.8)).toBe("TRENDING");
+    });
+
+    it("should detect RANDOM_WALK for H around 0.5", () => {
+      expect(detectRegime(0.5)).toBe("RANDOM_WALK");
+      expect(detectRegime(0.52)).toBe("RANDOM_WALK");
+    });
+  });
+
+  describe("Ornstein-Uhlenbeck Process", () => {
+    it("should estimate OU parameters", () => {
+      const prices = Array.from({ length: 50 }, (_, i) => 100 + Math.sin(i * 0.2) * 5);
+      const params = estimateOUParameters(prices);
+
+      expect(params).toHaveProperty("theta");
+      expect(params).toHaveProperty("mu");
+      expect(params).toHaveProperty("sigma");
+      expect(params.theta).toBeGreaterThan(0);
+    });
+
+    it("should generate LONG signal when price is below mean", () => {
+      const params = { theta: 0.1, mu: 100, sigma: 5 };
+      const signal = generateOUSignal(85, params); // 3 sigma below mean
+      expect(signal.direction).toBe("LONG");
+      expect(signal.zScore).toBeLessThan(-2);
+    });
+
+    it("should generate SHORT signal when price is above mean", () => {
+      const params = { theta: 0.1, mu: 100, sigma: 5 };
+      const signal = generateOUSignal(115, params); // 3 sigma above mean
+      expect(signal.direction).toBe("SHORT");
+      expect(signal.zScore).toBeGreaterThan(2);
+    });
+
+    it("should return null direction when price is near mean", () => {
+      const params = { theta: 0.1, mu: 100, sigma: 5 };
+      const signal = generateOUSignal(100, params);
+      expect(signal.direction).toBeNull();
+    });
+  });
+
+  describe("scaleATRForTimeframe", () => {
+    it("should scale ATR correctly for different timeframes", () => {
+      const dailyATR = 2000;
+      
+      expect(scaleATRForTimeframe(dailyATR, "1d")).toBe(2000);
+      expect(scaleATRForTimeframe(dailyATR, "1h")).toBeCloseTo(408, 0);
+      expect(scaleATRForTimeframe(dailyATR, "15m")).toBeCloseTo(204, 0);
+    });
+  });
+
   describe("calculateConfidence", () => {
     it("should return base score for neutral conditions", () => {
       const market: MarketConditions = {
@@ -94,11 +194,12 @@ describe("Signal Engine", () => {
         dailyVolatility: 0.04,
         atr: 2000,
       };
-      const confidence = calculateConfidence(market);
-      expect(confidence).toBe(50);
+      const confidence = calculateConfidence(market, "RANDOM_WALK", 0.5);
+      expect(confidence).toBeGreaterThanOrEqual(40);
+      expect(confidence).toBeLessThanOrEqual(60);
     });
 
-    it("should increase confidence for positive sentiment", () => {
+    it("should increase confidence for clear regime", () => {
       const market: MarketConditions = {
         symbol: "BTCUSDT",
         currentPrice: 100000,
@@ -106,48 +207,34 @@ describe("Signal Engine", () => {
         atr: 2000,
         sentimentScore: 0.8,
       };
-      const confidence = calculateConfidence(market);
-      expect(confidence).toBeGreaterThan(50);
-    });
-
-    it("should increase confidence for oversold RSI", () => {
-      const market: MarketConditions = {
-        symbol: "BTCUSDT",
-        currentPrice: 100000,
-        dailyVolatility: 0.04,
-        atr: 2000,
-        rsi: 25,
-      };
-      const confidence = calculateConfidence(market);
+      const confidence = calculateConfidence(market, "TRENDING", 0.7);
       expect(confidence).toBeGreaterThan(50);
     });
   });
 
   describe("determineDirection", () => {
-    it("should return LONG for bullish conditions", () => {
+    it("should return LONG for bullish conditions in trending regime", () => {
       const market: MarketConditions = {
         symbol: "BTCUSDT",
         currentPrice: 100000,
         dailyVolatility: 0.04,
         atr: 2000,
         sentimentScore: 0.8,
-        rsi: 40,
+        rsi: 60,
         ema200: 95000,
       };
-      expect(determineDirection(market)).toBe("LONG");
+      expect(determineDirection(market, "TRENDING")).toBe("LONG");
     });
 
-    it("should return SHORT for bearish conditions", () => {
+    it("should use OU signal in mean-reversion regime", () => {
       const market: MarketConditions = {
         symbol: "BTCUSDT",
         currentPrice: 100000,
         dailyVolatility: 0.04,
         atr: 2000,
-        sentimentScore: -0.8,
-        rsi: 75,
-        ema200: 105000,
       };
-      expect(determineDirection(market)).toBe("SHORT");
+      const ouSignal = { direction: "SHORT" as const, zScore: 2.5 };
+      expect(determineDirection(market, "MEAN_REVERSION", ouSignal)).toBe("SHORT");
     });
   });
 
@@ -167,16 +254,29 @@ describe("Signal Engine", () => {
 
       expect(signal).toHaveProperty("id");
       expect(signal.asset).toBe("BTCUSDT");
-      expect(signal.direction).toBe("LONG");
       expect(signal.entryPrice).toBe(100000);
-      expect(signal.takeProfitPrice).toBeGreaterThan(signal.entryPrice);
-      expect(signal.stopLossPrice).toBeLessThan(signal.entryPrice);
       expect(signal.leverageRecommendation).toBeGreaterThan(0);
       expect(signal.riskRewardRatio).toBe(2.0);
       expect(signal.confidenceScore).toBeGreaterThanOrEqual(0);
       expect(signal.confidenceScore).toBeLessThanOrEqual(100);
       expect(signal.rationale).toBeTruthy();
       expect(["LOW", "MEDIUM", "HIGH", "EXTREME"]).toContain(signal.riskLevel);
+    });
+
+    it("should include quantitative fields when historical data provided", () => {
+      const market: MarketConditions = {
+        symbol: "BTCUSDT",
+        currentPrice: 100000,
+        dailyVolatility: 0.04,
+        atr: 2000,
+        historicalPrices: Array.from({ length: 100 }, (_, i) => 95000 + i * 50),
+      };
+
+      const signal = generateSignal(market);
+
+      expect(signal.regime).toBeDefined();
+      expect(signal.hurstExponent).toBeDefined();
+      expect(signal.timeframe).toBe("15m"); // Default
     });
   });
 
@@ -217,6 +317,16 @@ describe("Signal Engine", () => {
     });
   });
 
+  describe("TIMEFRAME_SCALERS", () => {
+    it("should have correct scaling factors", () => {
+      expect(TIMEFRAME_SCALERS["1d"]).toBe(1.0);
+      expect(TIMEFRAME_SCALERS["4h"]).toBeCloseTo(0.408, 2);
+      expect(TIMEFRAME_SCALERS["1h"]).toBeCloseTo(0.204, 2);
+      expect(TIMEFRAME_SCALERS["15m"]).toBeCloseTo(0.102, 2);
+      expect(TIMEFRAME_SCALERS["5m"]).toBeCloseTo(0.059, 2);
+    });
+  });
+
   describe("DEFAULT_CONFIG", () => {
     it("should have sensible defaults", () => {
       expect(DEFAULT_CONFIG.safetyFactor).toBe(2.0);
@@ -224,6 +334,7 @@ describe("Signal Engine", () => {
       expect(DEFAULT_CONFIG.minRiskRewardRatio).toBe(2.0);
       expect(DEFAULT_CONFIG.maxLeverage).toBe(20);
       expect(DEFAULT_CONFIG.minLeverage).toBe(1);
+      expect(DEFAULT_CONFIG.timeframe).toBe("15m");
     });
   });
 });

@@ -1,5 +1,5 @@
 import { ScrollView, Text, View, RefreshControl, StyleSheet } from "react-native";
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import * as Haptics from "expo-haptics";
 import { Platform } from "react-native";
 
@@ -11,233 +11,223 @@ import { ModeIndicator } from "@/components/mode-indicator";
 import { WalletBalanceCard } from "@/components/wallet-balance-card";
 import { TradeExecutionModal } from "@/components/trade-execution-modal";
 import { BotActivationBanner } from "@/components/bot-activation-banner";
-import { LivePositionCard, LivePosition } from "@/components/live-position-card";
+import { LivePositionCard } from "@/components/live-position-card";
 import { useColors } from "@/hooks/use-colors";
 import { usePrices } from "@/lib/price-context";
-import { SignalSetup } from "@/lib/signal-engine";
-import {
-  MOCK_ASSETS,
-  generateMockSignal,
-  MOCK_PAPER_WALLET,
-} from "@/lib/mock-trading-data";
+import { useAutoTrade, useBotStatus, useLivePnL } from "@/lib/auto-trade-context";
+import { generateSignal, type SignalSetup, type Timeframe } from "@/lib/signal-engine";
+import { MOCK_ASSETS, getMarketConditions } from "@/lib/mock-trading-data";
 
 /**
- * Dashboard Screen - Main trading interface
+ * Dashboard Screen - Main trading interface with FSM-controlled bot
+ * 
+ * FSM States: IDLE → ANALYZING → SIGNAL_LOCKED → COUNTDOWN → EXECUTING → COOLDOWN → IDLE
  * 
  * Features:
- * - Bot Activation Banner with countdown
- * - Live Positions with pulsating badges
- * - Wallet balance display (available/locked)
+ * - Deterministic state management via useAutoTrade context
+ * - FSM-controlled bot execution with cooldown
+ * - Live positions with real-time P&L
+ * - Wallet balance display
  * - Real-time price updates
- * - Asset selector (horizontal scroll)
- * - Mode indicator (PAPER/LIVE)
+ * - Asset selector
  * - Auto-trade toggle
- * - Active signal card with full trade setup
- * - Trade execution modal with position size selector
  */
 export default function DashboardScreen() {
   const colors = useColors();
   const { getPrice, formatPrice, isConnected: priceConnected } = usePrices();
   
-  // State
+  // FSM-controlled state from context
+  const {
+    state,
+    setMode,
+    updateSettings,
+    setTimeframe,
+    lockSignal,
+    startCountdown,
+    startCooldown,
+    setBotStatus,
+    executeSignal,
+    closePosition,
+    updateMarkPrices,
+    shouldAutoExecute,
+    canTransitionTo,
+    openPositions,
+  } = useAutoTrade();
+  
+  const { status: botStatus, lockedSignal, cooldownEndsAt, isIdle, isCooldown } = useBotStatus();
+  const { unrealizedPnl, realizedPnl, equity } = useLivePnL();
+  
+  // Local UI state (not trading state)
   const [selectedAsset, setSelectedAsset] = useState("BTCUSDT");
-  const [autoTradeEnabled, setAutoTradeEnabled] = useState(false);
-  const [tradingMode, setTradingMode] = useState<"PAPER" | "LIVE">("PAPER");
-  const [isConnected, setIsConnected] = useState(false);
   const [currentSignal, setCurrentSignal] = useState<SignalSetup | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [isExecuting, setIsExecuting] = useState(false);
-  const [isLoadingBalance, setIsLoadingBalance] = useState(false);
-  
-  // Bot activation state
-  const [isBotActivated, setIsBotActivated] = useState(false);
-  const [botAction, setBotAction] = useState<"BUY" | "SELL">("BUY");
-  
-  // Open positions
-  const [openPositions, setOpenPositions] = useState<LivePosition[]>([]);
-  
-  // Wallet state
-  const [totalBalance, setTotalBalance] = useState(MOCK_PAPER_WALLET.balance);
-  const [availableBalance, setAvailableBalance] = useState(MOCK_PAPER_WALLET.balance);
-  const [lockedBalance, setLockedBalance] = useState(0);
-  
-  // Trade execution modal state
   const [showTradeModal, setShowTradeModal] = useState(false);
+  const [cooldownRemaining, setCooldownRemaining] = useState(0);
+
+  // Generate signal for selected asset
+  const generateNewSignal = useCallback(() => {
+    const marketConditions = getMarketConditions(selectedAsset);
+    if (!marketConditions) {
+      console.warn(`No market conditions for ${selectedAsset}`);
+      return null;
+    }
+    const signal = generateSignal(marketConditions, {
+      timeframe: state.activeTimeframe,
+    });
+    setCurrentSignal(signal);
+    return signal;
+  }, [selectedAsset, state.activeTimeframe]);
 
   // Generate initial signal
   useEffect(() => {
-    const signal = generateMockSignal(selectedAsset);
-    setCurrentSignal(signal);
-  }, [selectedAsset]);
+    generateNewSignal();
+  }, [generateNewSignal]);
 
-  // Auto-trade trigger when signal confidence is high
+  // Update mark prices from price context
   useEffect(() => {
-    if (autoTradeEnabled && currentSignal && currentSignal.confidenceScore >= 75) {
-      // Trigger bot activation with countdown
-      setIsBotActivated(true);
-      setBotAction(currentSignal.direction === "LONG" ? "BUY" : "SELL");
+    const prices: Record<string, number> = {};
+    MOCK_ASSETS.forEach((asset) => {
+      const priceData = getPrice(asset.symbol);
+      if (priceData) {
+        prices[asset.symbol] = priceData.price;
+      }
+    });
+    if (Object.keys(prices).length > 0) {
+      updateMarkPrices(prices);
     }
-  }, [autoTradeEnabled, currentSignal]);
+  }, [getPrice, updateMarkPrices]);
+
+  // Cooldown timer
+  useEffect(() => {
+    if (!cooldownEndsAt) {
+      setCooldownRemaining(0);
+      return;
+    }
+
+    const updateCooldown = () => {
+      const remaining = Math.max(0, Math.ceil((cooldownEndsAt.getTime() - Date.now()) / 1000));
+      setCooldownRemaining(remaining);
+    };
+
+    updateCooldown();
+    const interval = setInterval(updateCooldown, 1000);
+    return () => clearInterval(interval);
+  }, [cooldownEndsAt]);
+
+  // Auto-trade FSM logic
+  useEffect(() => {
+    if (!currentSignal) return;
+    if (!state.settings.enabled) return;
+    if (!isIdle) return; // Only trigger from IDLE state
+
+    // Check if signal meets auto-execute criteria
+    if (shouldAutoExecute(currentSignal)) {
+      // Transition: IDLE → SIGNAL_LOCKED
+      lockSignal(currentSignal);
+      
+      // After short delay, start countdown
+      setTimeout(() => {
+        if (canTransitionTo("COUNTDOWN")) {
+          startCountdown(3);
+        }
+      }, 500);
+    }
+  }, [currentSignal, state.settings.enabled, isIdle, shouldAutoExecute, lockSignal, canTransitionTo, startCountdown]);
 
   // Handle asset selection
-  const handleAssetSelect = (symbol: string) => {
+  const handleAssetSelect = useCallback((symbol: string) => {
     setSelectedAsset(symbol);
-    const signal = generateMockSignal(symbol);
-    setCurrentSignal(signal);
-  };
+  }, []);
 
   // Handle auto-trade toggle
-  const handleAutoTradeToggle = (enabled: boolean) => {
+  const handleAutoTradeToggle = useCallback((enabled: boolean) => {
     if (Platform.OS !== "web") {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
-    setAutoTradeEnabled(enabled);
-  };
+    updateSettings({ enabled });
+  }, [updateSettings]);
 
-  // Handle bot countdown complete - execute trade
-  const handleBotCountdownComplete = async () => {
-    if (!currentSignal) return;
+  // Handle bot countdown complete - execute trade via FSM
+  const handleBotCountdownComplete = useCallback(async () => {
+    if (!lockedSignal?.signal) return;
     
-    // Default position size for auto-trade (10% of available balance)
-    const positionSize = availableBalance * 0.1;
+    // Calculate position size (10% of available balance for auto-trade)
+    const marginAmount = state.wallet.available * 0.1;
     
-    // Create new position
-    const newPosition: LivePosition = {
-      id: Date.now(),
-      asset: currentSignal.asset,
-      direction: currentSignal.direction,
-      entryPrice: currentSignal.entryPrice,
-      leverage: currentSignal.leverageRecommendation,
-      margin: positionSize,
-      size: (positionSize * currentSignal.leverageRecommendation) / currentSignal.entryPrice,
-      takeProfitPrice: currentSignal.takeProfitPrice,
-      stopLossPrice: currentSignal.stopLossPrice,
-      mode: tradingMode,
-      timestampOpen: new Date(),
-    };
+    // Execute via context (FSM transition: COUNTDOWN → EXECUTING → COOLDOWN)
+    const success = await executeSignal(lockedSignal.signal, marginAmount);
     
-    setOpenPositions(prev => [newPosition, ...prev]);
-    setAvailableBalance(prev => prev - positionSize);
-    setLockedBalance(prev => prev + positionSize);
-    
-    if (Platform.OS !== "web") {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    if (success) {
+      // Generate new signal after execution
+      generateNewSignal();
     }
-    
-    setIsBotActivated(false);
-    
-    // Generate new signal
-    const newSignal = generateMockSignal(selectedAsset);
-    setCurrentSignal(newSignal);
-  };
+  }, [lockedSignal, state.wallet.available, executeSignal, generateNewSignal]);
 
   // Handle refresh
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
-    setIsLoadingBalance(true);
-    
-    // Simulate API call delay
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    // Generate new signal
-    const signal = generateMockSignal(selectedAsset);
-    setCurrentSignal(signal);
-    
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    generateNewSignal();
     setIsRefreshing(false);
-    setIsLoadingBalance(false);
-  }, [selectedAsset]);
+  }, [generateNewSignal]);
 
   // Handle opening trade modal
-  const handleOpenTradeModal = () => {
+  const handleOpenTradeModal = useCallback(() => {
     if (!currentSignal) return;
+    if (!isIdle && !isCooldown) return; // Can only open modal when IDLE or COOLDOWN
     setShowTradeModal(true);
-  };
+  }, [currentSignal, isIdle, isCooldown]);
 
-  // Handle trade execution with position size
-  const handleExecuteTrade = async (sizeUsdt: number) => {
+  // Handle manual trade execution with position size
+  const handleExecuteTrade = useCallback(async (sizeUsdt: number) => {
     if (!currentSignal) return;
     
-    setIsExecuting(true);
+    const success = await executeSignal(currentSignal, sizeUsdt);
     
-    // Simulate execution delay
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    
-    // Create new position
-    const newPosition: LivePosition = {
-      id: Date.now(),
-      asset: currentSignal.asset,
-      direction: currentSignal.direction,
-      entryPrice: currentSignal.entryPrice,
-      leverage: currentSignal.leverageRecommendation,
-      margin: sizeUsdt,
-      size: (sizeUsdt * currentSignal.leverageRecommendation) / currentSignal.entryPrice,
-      takeProfitPrice: currentSignal.takeProfitPrice,
-      stopLossPrice: currentSignal.stopLossPrice,
-      mode: tradingMode,
-      timestampOpen: new Date(),
-    };
-    
-    setOpenPositions(prev => [newPosition, ...prev]);
-    
-    if (Platform.OS !== "web") {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    if (success) {
+      setShowTradeModal(false);
+      generateNewSignal();
     }
-    
-    // Update balances
-    setAvailableBalance(prev => prev - sizeUsdt);
-    setLockedBalance(prev => prev + sizeUsdt);
-    
-    setIsExecuting(false);
-    setShowTradeModal(false);
-    
-    // Generate new signal after execution
-    const newSignal = generateMockSignal(selectedAsset);
-    setCurrentSignal(newSignal);
-  };
+  }, [currentSignal, executeSignal, generateNewSignal]);
 
   // Handle closing a position
-  const handleClosePosition = (position: LivePosition) => {
-    // Get current price for P&L calculation
-    const priceData = getPrice(position.asset);
-    const currentPrice = priceData?.price || position.entryPrice;
-    
-    // Calculate P&L
-    const priceDiff = position.direction === "LONG"
-      ? currentPrice - position.entryPrice
-      : position.entryPrice - currentPrice;
-    const pnlPercent = (priceDiff / position.entryPrice) * position.leverage * 100;
-    const pnlAbsolute = position.margin * (pnlPercent / 100);
-    
-    // Update balances
-    const returnedAmount = position.margin + pnlAbsolute;
-    setAvailableBalance(prev => prev + returnedAmount);
-    setLockedBalance(prev => prev - position.margin);
-    setTotalBalance(prev => prev + pnlAbsolute);
-    
-    // Remove position
-    setOpenPositions(prev => prev.filter(p => p.id !== position.id));
-    
-    if (Platform.OS !== "web") {
-      Haptics.notificationAsync(
-        pnlAbsolute >= 0 
-          ? Haptics.NotificationFeedbackType.Success 
-          : Haptics.NotificationFeedbackType.Warning
-      );
-    }
-  };
+  const handleClosePosition = useCallback(async (positionId: string) => {
+    await closePosition(positionId);
+  }, [closePosition]);
 
   // Get current price for selected asset
   const currentPriceData = getPrice(selectedAsset);
 
+  // Bot activation state derived from FSM
+  const isBotActivated = botStatus === "COUNTDOWN" || botStatus === "EXECUTING";
+  const botAction = lockedSignal?.signal?.direction === "LONG" ? "BUY" : "SELL";
+
+  // Format positions for LivePositionCard
+  const formattedPositions = useMemo(() => {
+    return openPositions.map((pos) => ({
+      id: typeof pos.id === "string" ? parseInt(pos.id.split("_")[1] || "0", 10) : 0,
+      asset: pos.asset,
+      direction: pos.direction,
+      entryPrice: pos.entryPrice,
+      leverage: pos.leverage,
+      margin: pos.margin,
+      size: pos.size,
+      takeProfitPrice: pos.liquidationPrice * 1.1, // Approximate
+      stopLossPrice: pos.liquidationPrice,
+      mode: pos.mode,
+      timestampOpen: pos.openedAt,
+    }));
+  }, [openPositions]);
+
   return (
     <ScreenContainer>
-      {/* Bot Activation Banner */}
+      {/* Bot Activation Banner - FSM controlled */}
       <BotActivationBanner
         isActive={isBotActivated}
         action={botAction}
         asset={selectedAsset}
-        direction={currentSignal?.direction || "LONG"}
-        countdownSeconds={3}
+        direction={lockedSignal?.signal?.direction || "LONG"}
+        countdownSeconds={lockedSignal?.countdownSeconds || 3}
         onCountdownComplete={handleBotCountdownComplete}
       />
 
@@ -260,17 +250,35 @@ export default function DashboardScreen() {
                 AQTE Trading
               </Text>
               <Text style={[styles.subtitle, { color: colors.muted }]}>
-                Automated Quantitative Trading Engine
+                Quantitative Signal Engine
               </Text>
             </View>
-            {/* Price Connection Status */}
-            <View style={[styles.connectionBadge, { backgroundColor: priceConnected ? colors.success + "20" : colors.error + "20" }]}>
-              <View style={[styles.connectionDot, { backgroundColor: priceConnected ? colors.success : colors.error }]} />
-              <Text style={[styles.connectionText, { color: priceConnected ? colors.success : colors.error }]}>
-                {priceConnected ? "LIVE" : "OFFLINE"}
+            {/* FSM Status Badge */}
+            <View style={[
+              styles.connectionBadge, 
+              { backgroundColor: isIdle ? colors.success + "20" : colors.warning + "20" }
+            ]}>
+              <View style={[
+                styles.connectionDot, 
+                { backgroundColor: isIdle ? colors.success : colors.warning }
+              ]} />
+              <Text style={[
+                styles.connectionText, 
+                { color: isIdle ? colors.success : colors.warning }
+              ]}>
+                {botStatus}
               </Text>
             </View>
           </View>
+          
+          {/* Cooldown Indicator */}
+          {isCooldown && cooldownRemaining > 0 && (
+            <View style={[styles.cooldownBanner, { backgroundColor: colors.warning + "20" }]}>
+              <Text style={[styles.cooldownText, { color: colors.warning }]}>
+                ⏳ Cooldown: {cooldownRemaining}s remaining
+              </Text>
+            </View>
+          )}
           
           {/* Current Price Display */}
           {currentPriceData && (
@@ -283,128 +291,154 @@ export default function DashboardScreen() {
               </Text>
               <Text style={[
                 styles.priceChange, 
-                { color: currentPriceData.change24hPercent >= 0 ? colors.success : colors.error }
+                { color: currentPriceData.change24h >= 0 ? colors.success : colors.error }
               ]}>
-                {currentPriceData.change24hPercent >= 0 ? "+" : ""}
-                {currentPriceData.change24hPercent.toFixed(2)}%
+                {currentPriceData.change24h >= 0 ? "+" : ""}{currentPriceData.change24h.toFixed(2)}%
               </Text>
             </View>
           )}
         </View>
 
-        {/* Mode Indicator */}
-        <View style={styles.section}>
+        {/* Mode & Auto-Trade Controls */}
+        <View style={styles.controlsRow}>
           <ModeIndicator
-            mode={tradingMode}
-            isConnected={isConnected}
-            balance={totalBalance}
+            mode={state.mode}
+            isConnected={state.isConnected}
+          />
+          <AutoTradeToggle
+            enabled={state.settings.enabled}
+            onToggle={handleAutoTradeToggle}
+            mode={state.mode}
+            isConnected={state.isConnected}
           />
         </View>
+
+        {/* Asset Selector */}
+        <AssetSelector
+          assets={MOCK_ASSETS}
+          selectedAsset={selectedAsset}
+          onSelect={handleAssetSelect}
+        />
 
         {/* Wallet Balance Card */}
-        <View style={styles.section}>
-          <WalletBalanceCard
-            totalBalance={totalBalance}
-            availableBalance={availableBalance}
-            lockedBalance={lockedBalance}
-            isLive={tradingMode === "LIVE"}
-            isLoading={isLoadingBalance}
-          />
-        </View>
+        <WalletBalanceCard
+          totalBalance={equity}
+          availableBalance={state.wallet.available}
+          lockedBalance={state.wallet.locked}
+          isLive={state.mode === "LIVE"}
+          isLoading={false}
+        />
 
-        {/* Open Positions */}
-        {openPositions.length > 0 && (
+        {/* Live Positions */}
+        {formattedPositions.length > 0 && (
           <View style={styles.section}>
-            <Text style={[styles.sectionLabel, { color: colors.muted }]}>
-              OPEN POSITIONS ({openPositions.length})
+            <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
+              Live Positions ({formattedPositions.length})
             </Text>
-            {openPositions.map(position => (
+            {formattedPositions.map((position) => (
               <LivePositionCard
                 key={position.id}
                 position={position}
-                onClose={handleClosePosition}
+                onClose={() => handleClosePosition(`pos_${position.id}_0`)}
               />
             ))}
           </View>
         )}
 
-        {/* Asset Selector */}
-        <View style={styles.assetSection}>
-          <Text style={[styles.sectionLabel, { color: colors.muted }]}>
-            SELECT ASSET
-          </Text>
-          <AssetSelector
-            assets={MOCK_ASSETS}
-            selectedAsset={selectedAsset}
-            onSelect={handleAssetSelect}
-          />
-        </View>
-
-        {/* Auto-Trade Toggle */}
-        <View style={styles.section}>
-          <AutoTradeToggle
-            enabled={autoTradeEnabled}
-            onToggle={handleAutoTradeToggle}
-            mode={tradingMode}
-            isConnected={isConnected}
-          />
-        </View>
-
-        {/* Active Signal Card */}
-        <View style={styles.section}>
-          <Text style={[styles.sectionLabel, { color: colors.muted }]}>
-            ACTIVE SIGNAL
-          </Text>
-          {currentSignal ? (
+        {/* Trading Signal Card */}
+        {currentSignal && (
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
+              Active Signal
+            </Text>
             <TradingSignalCard
               signal={currentSignal}
-              mode={tradingMode}
-              autoTradeEnabled={autoTradeEnabled}
+              mode={state.mode}
+              autoTradeEnabled={state.settings.enabled}
               onExecute={handleOpenTradeModal}
-              isExecuting={isExecuting}
+              isExecuting={botStatus === "EXECUTING"}
             />
-          ) : (
-            <View
-              style={[
-                styles.noSignalCard,
-                { backgroundColor: colors.surface, borderColor: colors.border },
-              ]}
-            >
-              <Text style={[styles.noSignalText, { color: colors.muted }]}>
-                Analyzing market conditions...
+          </View>
+        )}
+
+        {/* Quantitative Info */}
+        {currentSignal?.regime && (
+          <View style={[styles.quantCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <Text style={[styles.quantTitle, { color: colors.foreground }]}>
+              Quantitative Analysis
+            </Text>
+            <View style={styles.quantRow}>
+              <Text style={[styles.quantLabel, { color: colors.muted }]}>Regime:</Text>
+              <Text style={[styles.quantValue, { color: colors.primary }]}>
+                {currentSignal.regime}
               </Text>
             </View>
-          )}
-        </View>
+            {currentSignal.hurstExponent !== undefined && (
+              <View style={styles.quantRow}>
+                <Text style={[styles.quantLabel, { color: colors.muted }]}>Hurst Exponent:</Text>
+                <Text style={[styles.quantValue, { color: colors.foreground }]}>
+                  {currentSignal.hurstExponent.toFixed(3)}
+                </Text>
+              </View>
+            )}
+            {currentSignal.timeframe && (
+              <View style={styles.quantRow}>
+                <Text style={[styles.quantLabel, { color: colors.muted }]}>Timeframe:</Text>
+                <Text style={[styles.quantValue, { color: colors.foreground }]}>
+                  {currentSignal.timeframe}
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
 
-        {/* Info Banner */}
-        <View
-          style={[
-            styles.infoBanner,
-            { backgroundColor: colors.primary + "10" },
-          ]}
-        >
-          <Text style={[styles.infoText, { color: colors.primary }]}>
-            {tradingMode === "PAPER"
-              ? "🧪 Paper Trading Mode - No real funds at risk"
-              : "⚠️ Live Trading Mode - Real funds will be used"}
+        {/* Performance Summary */}
+        <View style={[styles.performanceCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <Text style={[styles.performanceTitle, { color: colors.foreground }]}>
+            Session Performance
           </Text>
+          <View style={styles.performanceRow}>
+            <View style={styles.performanceItem}>
+              <Text style={[styles.performanceLabel, { color: colors.muted }]}>Realized P&L</Text>
+              <Text style={[
+                styles.performanceValue, 
+                { color: realizedPnl >= 0 ? colors.success : colors.error }
+              ]}>
+                {realizedPnl >= 0 ? "+" : ""}${realizedPnl.toFixed(2)}
+              </Text>
+            </View>
+            <View style={styles.performanceItem}>
+              <Text style={[styles.performanceLabel, { color: colors.muted }]}>Unrealized P&L</Text>
+              <Text style={[
+                styles.performanceValue, 
+                { color: unrealizedPnl >= 0 ? colors.success : colors.error }
+              ]}>
+                {unrealizedPnl >= 0 ? "+" : ""}${unrealizedPnl.toFixed(2)}
+              </Text>
+            </View>
+            <View style={styles.performanceItem}>
+              <Text style={[styles.performanceLabel, { color: colors.muted }]}>Equity</Text>
+              <Text style={[styles.performanceValue, { color: colors.foreground }]}>
+                ${equity.toFixed(2)}
+              </Text>
+            </View>
+          </View>
         </View>
 
-        {/* Bottom spacing for tab bar */}
-        <View style={styles.bottomSpacer} />
+        {/* Spacer for tab bar */}
+        <View style={{ height: 100 }} />
       </ScrollView>
 
       {/* Trade Execution Modal */}
       {currentSignal && (
         <TradeExecutionModal
           visible={showTradeModal}
+          signal={currentSignal}
+          availableBalance={state.wallet.available}
           onClose={() => setShowTradeModal(false)}
           onConfirm={handleExecuteTrade}
-          signal={currentSignal}
-          availableBalance={availableBalance}
-          isLive={tradingMode === "LIVE"}
-          isExecuting={isExecuting}
+          isLive={state.mode === "LIVE"}
+          isExecuting={botStatus === "EXECUTING"}
         />
       )}
     </ScreenContainer>
@@ -413,97 +447,135 @@ export default function DashboardScreen() {
 
 const styles = StyleSheet.create({
   scrollContent: {
-    paddingBottom: 20,
+    paddingHorizontal: 16,
+    paddingTop: 8,
   },
   header: {
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 8,
+    marginBottom: 16,
   },
   headerRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
+    marginBottom: 12,
   },
   title: {
     fontSize: 28,
-    fontWeight: "800",
+    fontWeight: "700",
+    letterSpacing: -0.5,
   },
   subtitle: {
     fontSize: 14,
-    marginTop: 4,
+    marginTop: 2,
   },
   connectionBadge: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     borderRadius: 12,
-    gap: 4,
+    gap: 6,
   },
   connectionDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
   },
   connectionText: {
-    fontSize: 10,
-    fontWeight: "700",
+    fontSize: 11,
+    fontWeight: "600",
+    letterSpacing: 0.5,
+  },
+  cooldownBanner: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    marginBottom: 12,
+  },
+  cooldownText: {
+    fontSize: 13,
+    fontWeight: "600",
+    textAlign: "center",
   },
   priceDisplay: {
     flexDirection: "row",
     alignItems: "baseline",
-    marginTop: 12,
     gap: 8,
   },
   priceLabel: {
-    fontSize: 12,
+    fontSize: 13,
   },
   priceValue: {
     fontSize: 24,
     fontWeight: "700",
-    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+    fontVariant: ["tabular-nums"],
   },
   priceChange: {
     fontSize: 14,
     fontWeight: "600",
   },
+  controlsRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 16,
+  },
   section: {
-    paddingHorizontal: 16,
-    marginTop: 16,
-  },
-  assetSection: {
-    marginTop: 16,
-  },
-  sectionLabel: {
-    fontSize: 12,
-    fontWeight: "600",
-    letterSpacing: 0.5,
-    marginBottom: 10,
-    paddingHorizontal: 16,
-  },
-  noSignalCard: {
-    padding: 40,
-    borderRadius: 20,
-    borderWidth: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  noSignalText: {
-    fontSize: 15,
-  },
-  infoBanner: {
-    marginHorizontal: 16,
     marginTop: 20,
-    padding: 14,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: "600",
+    marginBottom: 12,
+  },
+  quantCard: {
+    marginTop: 20,
+    padding: 16,
     borderRadius: 12,
+    borderWidth: 1,
+  },
+  quantTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    marginBottom: 12,
+  },
+  quantRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 8,
+  },
+  quantLabel: {
+    fontSize: 14,
+  },
+  quantValue: {
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  performanceCard: {
+    marginTop: 20,
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  performanceTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    marginBottom: 12,
+  },
+  performanceRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  performanceItem: {
     alignItems: "center",
   },
-  infoText: {
-    fontSize: 13,
-    fontWeight: "500",
+  performanceLabel: {
+    fontSize: 12,
+    marginBottom: 4,
   },
-  bottomSpacer: {
-    height: 40,
+  performanceValue: {
+    fontSize: 16,
+    fontWeight: "700",
+    fontVariant: ["tabular-nums"],
   },
 });
